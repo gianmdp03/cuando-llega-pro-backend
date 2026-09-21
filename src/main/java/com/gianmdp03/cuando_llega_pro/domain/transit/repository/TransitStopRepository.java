@@ -16,12 +16,12 @@ public interface TransitStopRepository extends JpaRepository<TransitStop, String
             select distinct stop
             from TransitStop stop
             join stop.directions stopTransitLine
-            where stopTransitLine.line.code = :codeTransitLine
+            where stopTransitLine.line.code = :lineCode
               and stopTransitLine.direction = :direction
             order by stop.description asc
             """)
-    List<TransitStop> findByCodigoTransitLineAndBandera(
-            @Param("codeTransitLine") String codeTransitLine,
+    List<TransitStop> findByLineCodeAndDirection(
+            @Param("lineCode") String lineCode,
             @Param("direction") String direction
     );
 
@@ -32,5 +32,5 @@ public interface TransitStopRepository extends JpaRepository<TransitStop, String
             left join fetch stopTransitLine.line
             where stop.identifier = :identifier
             """)
-    Optional<TransitStop> findByIdentificadorWithTransitLines(@Param("identifier") String identifier);
+    Optional<TransitStop> findByIdentifierWithDirections(@Param("identifier") String identifier);
 }

@@ -8,6 +8,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -16,6 +17,7 @@ import java.io.InputStream;
 
 /** Loads the bundled static transit catalogue only when no physical stops exist yet. */
 @Component
+@ConditionalOnProperty(name = "app.transit.bootstrap.enabled", havingValue = "true", matchIfMissing = true)
 @RequiredArgsConstructor
 public class TransitDataInitializer implements ApplicationRunner {
 
@@ -33,7 +35,7 @@ public class TransitDataInitializer implements ApplicationRunner {
             return;
         }
 
-        ClassPathResource resource = new ClassPathResource("stops_mgp.json");
+        ClassPathResource resource = new ClassPathResource("paradas_mgp.json");
         try (InputStream inputStream = resource.getInputStream()) {
             JsonNode dataset = objectMapper.readTree(inputStream);
             transitDataPersistenceService.replaceEmptyCatalog(dataset, BATCH_SIZE);

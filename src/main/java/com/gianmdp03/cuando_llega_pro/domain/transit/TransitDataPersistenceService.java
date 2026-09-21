@@ -20,12 +20,12 @@ public class TransitDataPersistenceService {
 
     @Transactional
     public void replaceEmptyCatalog(JsonNode dataset, int batchSize) {
-        JsonNode directions = dataset.path("lines");
-        if (!directions.isArray()) {
-            throw new IllegalArgumentException("El dataset no contiene el arreglo directions");
+        JsonNode lines = dataset.path("lines");
+        if (!lines.isArray()) {
+            throw new IllegalArgumentException("Dataset does not contain the lines array");
         }
-        for (JsonNode lineNode : directions) {
-            upsertTransitLine(lineNode.path("codeTransitLine").asText(), lineNode.path("name").asText());
+        for (JsonNode lineNode : lines) {
+            upsertTransitLine(lineNode.path("lineCode").asText(), lineNode.path("name").asText());
         }
         entityManager.flush();
 
@@ -63,8 +63,8 @@ public class TransitDataPersistenceService {
                         identifier,
                         firstText(stopNode, "Codigo", "code"),
                         firstText(stopNode, "Descripcion", "description"),
-                        firstDouble(stopNode, "LatitudTransitStop", "latitude", "Latitud"),
-                        firstDouble(stopNode, "LongitudTransitStop", "longitude", "Longitud")
+                        firstDouble(stopNode, "LatitudParada", "latitude", "Latitud"),
+                        firstDouble(stopNode, "LongitudParada", "longitude", "Longitud")
                 );
                 entityManager.persist(stop);
             } else {
@@ -73,7 +73,7 @@ public class TransitDataPersistenceService {
 
             String direction = firstText(stopNode, "AbreviaturaBandera", "direction");
             if (direction != null && stopTransitLineRepository
-                    .findByTransitStopIdentificadorAndTransitLineCodigoAndBandera(identifier, line.getCode(), direction)
+                    .findByStopIdentifierAndLineCodeAndDirection(identifier, line.getCode(), direction)
                     .isEmpty()) {
                 stop.addTransitLine(new StopLineDirection(
                         entityManager.getReference(TransitLine.class, line.getCode()),
@@ -93,10 +93,10 @@ public class TransitDataPersistenceService {
                 doubleOrNull(stopNode, "latitude"),
                 doubleOrNull(stopNode, "longitude")
         );
-        for (JsonNode lineNode : stopNode.path("directions")) {
-            String codeTransitLine = requiredText(lineNode, "codeTransitLine");
+        for (JsonNode lineNode : stopNode.path("lines")) {
+            String lineCode = requiredText(lineNode, "lineCode");
             stop.addTransitLine(new StopLineDirection(
-                    entityManager.getReference(TransitLine.class, codeTransitLine),
+                    entityManager.getReference(TransitLine.class, lineCode),
                     requiredText(lineNode, "direction"),
                     textOrNull(lineNode, "expandedDirection")
             ));
@@ -106,7 +106,7 @@ public class TransitDataPersistenceService {
 
     private void upsertTransitLine(String code, String name) {
         if (code == null || code.isBlank()) {
-            throw new IllegalArgumentException("Una línea del dataset no tiene codeTransitLine");
+            throw new IllegalArgumentException("A dataset line has no lineCode");
         }
         TransitLine line = entityManager.find(TransitLine.class, code);
         if (line == null) {
@@ -119,8 +119,8 @@ public class TransitDataPersistenceService {
     private void updateTransitStop(TransitStop stop, JsonNode source) {
         String code = firstText(source, "Codigo", "code");
         String description = firstText(source, "Descripcion", "description");
-        Double latitude = firstDouble(source, "LatitudTransitStop", "latitude", "Latitud");
-        Double longitude = firstDouble(source, "LongitudTransitStop", "longitude", "Longitud");
+        Double latitude = firstDouble(source, "LatitudParada", "latitude", "Latitud");
+        Double longitude = firstDouble(source, "LongitudParada", "longitude", "Longitud");
         if (code != null) stop.setCode(code);
         if (description != null) stop.setDescription(description);
         if (latitude != null) stop.setLatitude(latitude);

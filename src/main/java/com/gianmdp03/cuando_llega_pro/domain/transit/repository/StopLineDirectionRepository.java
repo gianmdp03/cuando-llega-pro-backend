@@ -16,22 +16,22 @@ public interface StopLineDirectionRepository extends JpaRepository<StopLineDirec
     @Query("""
             select distinct stopTransitLine.direction
             from StopLineDirection stopTransitLine
-            where stopTransitLine.line.code = :codeTransitLine
+            where stopTransitLine.line.code = :lineCode
             order by stopTransitLine.direction asc
             """)
-    List<String> findDistinctBanderasByTransitLineCodigo(@Param("codeTransitLine") String codeTransitLine);
+    List<String> findDistinctDirectionsByLineCode(@Param("lineCode") String lineCode);
 
     @Query("""
             select distinct new com.gianmdp03.cuando_llega_pro.domain.transit.dto.DirectionDto(
                 stopTransitLine.direction, stopTransitLine.expandedDirection
             )
             from StopLineDirection stopTransitLine
-            where stopTransitLine.line.code = :codeTransitLine
+            where stopTransitLine.line.code = :lineCode
             order by stopTransitLine.direction asc, stopTransitLine.expandedDirection asc
             """)
-    List<DirectionDto> findDistinctSentidosByTransitLineCodigo(@Param("codeTransitLine") String codeTransitLine);
+    List<DirectionDto> findDistinctDirectionDtosByLineCode(@Param("lineCode") String lineCode);
 
-    Optional<StopLineDirection> findByTransitStopIdentificadorAndTransitLineCodigoAndBandera(
+    Optional<StopLineDirection> findByStopIdentifierAndLineCodeAndDirection(
             String identifier,
             String codeTransitLine,
             String direction

@@ -9,5 +9,5 @@ import java.util.List;
 @Repository
 public interface TransitLineRepository extends JpaRepository<TransitLine, String> {
 
-    List<TransitLine> findAllByOrderByNombreAsc();
+    List<TransitLine> findAllByOrderByNameAsc();
 }

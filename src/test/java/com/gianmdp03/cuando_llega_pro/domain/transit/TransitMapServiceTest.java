@@ -40,7 +40,7 @@ class TransitMapServiceTest {
     @Test
     void getDirections_returnsOneEntryPerBandera() {
         when(lineRepository.existsById("100")).thenReturn(true);
-        when(stopTransitLineRepository.findDistinctSentidosByTransitLineCodigo("100")).thenReturn(List.of(
+        when(stopTransitLineRepository.findDistinctDirectionDtosByLineCode("100")).thenReturn(List.of(
                 new DirectionDto("AL BOSQUE", "AL BOSQUE"),
                 new DirectionDto("AL BOSQUE", "AL BOSQUE VÍA CENTRO"),
                 new DirectionDto("A BERUTI", "A BERUTI")
@@ -58,7 +58,7 @@ class TransitMapServiceTest {
         TransitStop stop = new TransitStop("P3613", "17211", "3613", -37.999541, -57.544504);
         stop.addTransitLine(new StopLineDirection(new TransitLine("100", "521"), "AL BOSQUE", "AL BOSQUE"));
         stop.addTransitLine(new StopLineDirection(new TransitLine("101", "522"), "AL FARO", "AL FARO"));
-        when(stopRepository.findByIdentificadorWithTransitLines("P3613")).thenReturn(Optional.of(stop));
+        when(stopRepository.findByIdentifierWithDirections("P3613")).thenReturn(Optional.of(stop));
 
         StopDetailDto detalle = transitService.getStop("P3613");
 

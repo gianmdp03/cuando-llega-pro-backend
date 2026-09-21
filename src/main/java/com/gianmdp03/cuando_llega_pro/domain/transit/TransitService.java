@@ -29,11 +29,11 @@ public class TransitService {
 
     private final TransitLineRepository lineRepository;
     private final TransitStopRepository stopRepository;
-    private final StopLineDirectionRepository stopTransitLineRepository;
+    private final StopLineDirectionRepository stopLineDirectionRepository;
 
-    @Cacheable(cacheNames = CaffeineCacheConfig.TRANSIT_MAP_CACHE, key = "'directions'")
+    @Cacheable(cacheNames = CaffeineCacheConfig.TRANSIT_MAP_CACHE, key = "'lines'")
     public List<MapLineDto> getLines() {
-        return lineRepository.findAllByOrderByNombreAsc().stream()
+        return lineRepository.findAllByOrderByNameAsc().stream()
                 .map(line -> new MapLineDto(line.getCode(), line.getName()))
                 .toList();
     }
@@ -41,41 +41,41 @@ public class TransitService {
     @Cacheable(cacheNames = CaffeineCacheConfig.TRANSIT_MAP_CACHE, key = "'directions:' + #codeTransitLine")
     public List<DirectionDto> getDirections(String codeTransitLine) {
         requireLine(codeTransitLine);
-        Map<String, DirectionDto> sentidos = new LinkedHashMap<>();
-        stopTransitLineRepository.findDistinctSentidosByTransitLineCodigo(codeTransitLine)
-                .forEach(sentido -> sentidos.putIfAbsent(sentido.direction(), sentido));
-        return List.copyOf(sentidos.values());
+        Map<String, DirectionDto> directions = new LinkedHashMap<>();
+        stopLineDirectionRepository.findDistinctDirectionDtosByLineCode(codeTransitLine)
+                .forEach(direction -> directions.putIfAbsent(direction.direction(), direction));
+        return List.copyOf(directions.values());
     }
 
     @Cacheable(cacheNames = CaffeineCacheConfig.TRANSIT_MAP_CACHE, key = "'stops:' + #codeTransitLine + ':' + #direction")
     public List<MapStopDto> getStops(String codeTransitLine, String direction) {
         requireLine(codeTransitLine);
-        return stopRepository.findByCodigoTransitLineAndBandera(codeTransitLine, direction).stream()
-                .map(this::toTransitStopMapa)
+        return stopRepository.findByLineCodeAndDirection(codeTransitLine, direction).stream()
+                .map(this::toMapStop)
                 .toList();
     }
 
     @Cacheable(cacheNames = CaffeineCacheConfig.TRANSIT_MAP_CACHE, key = "'stop:' + #identifier")
     public StopDetailDto getStop(String identifier) {
-        TransitStop stop = stopRepository.findByIdentificadorWithTransitLines(identifier)
-                .orElseThrow(() -> new ResourceNotFoundException("TransitStop no encontrada: " + identifier));
+        TransitStop stop = stopRepository.findByIdentifierWithDirections(identifier)
+                .orElseThrow(() -> new ResourceNotFoundException("Stop not found: " + identifier));
         List<LineDirectionDto> directions = stop.getDirections().stream()
                 .sorted((left, right) -> {
                     int byName = left.getLine().getName().compareTo(right.getLine().getName());
                     return byName != 0 ? byName : left.getDirection().compareTo(right.getDirection());
                 })
-                .map(this::toTransitLineSentido)
+                .map(this::toLineDirection)
                 .toList();
         return new StopDetailDto(stop.getIdentifier(), stop.getLatitude(), stop.getLongitude(), directions);
     }
 
     private void requireLine(String codeTransitLine) {
         if (!lineRepository.existsById(codeTransitLine)) {
-            throw new ResourceNotFoundException("Línea no encontrada: " + codeTransitLine);
+            throw new ResourceNotFoundException("Line not found: " + codeTransitLine);
         }
     }
 
-    private MapStopDto toTransitStopMapa(TransitStop stop) {
+    private MapStopDto toMapStop(TransitStop stop) {
         return new MapStopDto(
                 stop.getIdentifier(),
                 stop.getCode(),
@@ -85,12 +85,12 @@ public class TransitService {
         );
     }
 
-    private LineDirectionDto toTransitLineSentido(StopLineDirection stopTransitLine) {
+    private LineDirectionDto toLineDirection(StopLineDirection stopLineDirection) {
         return new LineDirectionDto(
-                stopTransitLine.getLine().getCode(),
-                stopTransitLine.getLine().getName(),
-                stopTransitLine.getDirection(),
-                stopTransitLine.getExpandedDirection()
+                stopLineDirection.getLine().getCode(),
+                stopLineDirection.getLine().getName(),
+                stopLineDirection.getDirection(),
+                stopLineDirection.getExpandedDirection()
         );
     }
 }
