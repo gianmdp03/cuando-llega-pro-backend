@@ -1,9 +1,9 @@
 package com.gianmdp03.cuando_llega_pro.domain.transit;
 
-import com.gianmdp03.cuando_llega_pro.domain.transit.dto.LineaDTO;
-import com.gianmdp03.cuando_llega_pro.domain.transit.dto.ParadaDetalleDTO;
-import com.gianmdp03.cuando_llega_pro.domain.transit.dto.ParadaMapaDTO;
-import com.gianmdp03.cuando_llega_pro.domain.transit.dto.SentidoDTO;
+import com.gianmdp03.cuando_llega_pro.domain.transit.dto.MapLineDto;
+import com.gianmdp03.cuando_llega_pro.domain.transit.dto.StopDetailDto;
+import com.gianmdp03.cuando_llega_pro.domain.transit.dto.MapStopDto;
+import com.gianmdp03.cuando_llega_pro.domain.transit.dto.DirectionDto;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -14,34 +14,38 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 
-/** REST API used by the interactive map against the persisted catalogue. */
+/**
+ * REST API used by the interactive map against the persisted catalogue.
+ * The {@code /map} segment deliberately separates this local catalogue from
+ * the legacy {@code /api/v1/transit/lines} endpoints backed by MGP.
+ */
 @RestController
-@RequestMapping("/api/v1/transit")
+@RequestMapping("/api/v1/transit/map")
 @RequiredArgsConstructor
 public class TransitController {
 
     private final TransitService transitService;
 
-    @GetMapping("/lineas")
-    public ResponseEntity<List<LineaDTO>> getLineas() {
-        return ResponseEntity.ok(transitService.getLineas());
+    @GetMapping("/lines")
+    public ResponseEntity<List<MapLineDto>> getLines() {
+        return ResponseEntity.ok(transitService.getLines());
     }
 
-    @GetMapping("/lineas/{codigoLinea}/sentidos")
-    public ResponseEntity<List<SentidoDTO>> getSentidos(@PathVariable String codigoLinea) {
-        return ResponseEntity.ok(transitService.getSentidos(codigoLinea));
+    @GetMapping("/lines/{lineCode}/directions")
+    public ResponseEntity<List<DirectionDto>> getDirections(@PathVariable String lineCode) {
+        return ResponseEntity.ok(transitService.getDirections(lineCode));
     }
 
-    @GetMapping("/lineas/{codigoLinea}/paradas")
-    public ResponseEntity<List<ParadaMapaDTO>> getParadas(
-            @PathVariable String codigoLinea,
-            @RequestParam String bandera
+    @GetMapping("/lines/{lineCode}/stops")
+    public ResponseEntity<List<MapStopDto>> getStops(
+            @PathVariable String lineCode,
+            @RequestParam String direction
     ) {
-        return ResponseEntity.ok(transitService.getParadas(codigoLinea, bandera));
+        return ResponseEntity.ok(transitService.getStops(lineCode, direction));
     }
 
-    @GetMapping("/paradas/{identificador}")
-    public ResponseEntity<ParadaDetalleDTO> getParadaDetalle(@PathVariable String identificador) {
-        return ResponseEntity.ok(transitService.getParadaDetalle(identificador));
+    @GetMapping("/stops/{identifier}")
+    public ResponseEntity<StopDetailDto> getStop(@PathVariable String identifier) {
+        return ResponseEntity.ok(transitService.getStop(identifier));
     }
 }

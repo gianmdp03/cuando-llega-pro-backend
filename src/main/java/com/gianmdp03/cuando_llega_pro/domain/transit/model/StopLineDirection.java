@@ -20,43 +20,43 @@ import lombok.Setter;
 /** Associates a physical stop with one line and its travel direction. */
 @Entity
 @Table(
-        name = "parada_lineas",
+        name = "stop_directions",
         uniqueConstraints = @UniqueConstraint(
-                name = "uk_parada_linea_bandera",
-                columnNames = {"parada_identificador", "linea_codigo", "bandera"}
+                name = "uk_stop_line_direction",
+                columnNames = {"stop_identifier", "line_code", "direction"}
         ),
         indexes = {
-                @Index(name = "idx_parada_lineas_linea_bandera", columnList = "linea_codigo, bandera"),
-                @Index(name = "idx_parada_lineas_parada", columnList = "parada_identificador")
+                @Index(name = "idx_stop_directions_line_direction", columnList = "line_code, direction"),
+                @Index(name = "idx_stop_directions_stop", columnList = "stop_identifier")
         }
 )
 @Getter
 @Setter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor
-public class ParadaLinea {
+public class StopLineDirection {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "parada_identificador", nullable = false)
-    private Parada parada;
+    @JoinColumn(name = "stop_identifier", nullable = false)
+    private TransitStop stop;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "linea_codigo", nullable = false)
-    private Linea linea;
+    @JoinColumn(name = "line_code", nullable = false)
+    private TransitLine line;
 
-    @Column(name = "bandera", nullable = false, length = 255)
-    private String bandera;
+    @Column(name = "direction", nullable = false, length = 255)
+    private String direction;
 
-    @Column(name = "bandera_ampliada", length = 500)
-    private String banderaAmpliada;
+    @Column(name = "expanded_direction", length = 500)
+    private String expandedDirection;
 
-    public ParadaLinea(Linea linea, String bandera, String banderaAmpliada) {
-        this.linea = linea;
-        this.bandera = bandera;
-        this.banderaAmpliada = banderaAmpliada;
+    public StopLineDirection(TransitLine line, String direction, String expandedDirection) {
+        this.line = line;
+        this.direction = direction;
+        this.expandedDirection = expandedDirection;
     }
 }

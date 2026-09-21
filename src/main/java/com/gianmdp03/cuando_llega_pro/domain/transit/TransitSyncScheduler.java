@@ -3,8 +3,8 @@ package com.gianmdp03.cuando_llega_pro.domain.transit;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.gianmdp03.cuando_llega_pro.client.MgpProxyClient;
-import com.gianmdp03.cuando_llega_pro.domain.transit.model.Linea;
-import com.gianmdp03.cuando_llega_pro.domain.transit.repository.LineaRepository;
+import com.gianmdp03.cuando_llega_pro.domain.transit.model.TransitLine;
+import com.gianmdp03.cuando_llega_pro.domain.transit.repository.TransitLineRepository;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -22,7 +22,7 @@ public class TransitSyncScheduler {
 
     private static final Logger log = LoggerFactory.getLogger(TransitSyncScheduler.class);
 
-    private final LineaRepository lineaRepository;
+    private final TransitLineRepository lineRepository;
     private final MgpProxyClient mgpProxyClient;
     private final ObjectMapper objectMapper;
     private final TransitDataPersistenceService transitDataPersistenceService;
@@ -31,18 +31,18 @@ public class TransitSyncScheduler {
     @Scheduled(cron = "0 0 4 * * *")
     public void synchronize() {
         boolean completedSuccessfully = true;
-        for (Linea linea : lineaRepository.findAll()) {
+        for (TransitLine line : lineRepository.findAll()) {
             try {
                 String response = mgpProxyClient.getStopsByLine(
                         UUID.randomUUID().toString(),
                         TransitCatalogService.ACTION_RECUPERAR_PARADAS_LEGACY,
-                        linea.getCodigo()
+                        line.getCode()
                 );
                 JsonNode payload = objectMapper.readTree(response);
-                transitDataPersistenceService.synchronizeLineStops(linea, payload);
+                transitDataPersistenceService.synchronizeLineStops(line, payload);
             } catch (Exception exception) {
                 completedSuccessfully = false;
-                log.warn("No se pudo sincronizar las paradas de la línea {}", linea.getCodigo(), exception);
+                log.warn("No se pudo sincronizar las stops de la línea {}", line.getCode(), exception);
             }
         }
         if (completedSuccessfully) {

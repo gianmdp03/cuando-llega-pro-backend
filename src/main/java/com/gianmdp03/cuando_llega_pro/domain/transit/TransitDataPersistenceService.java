@@ -1,10 +1,10 @@
 package com.gianmdp03.cuando_llega_pro.domain.transit;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.gianmdp03.cuando_llega_pro.domain.transit.model.Linea;
-import com.gianmdp03.cuando_llega_pro.domain.transit.model.Parada;
-import com.gianmdp03.cuando_llega_pro.domain.transit.model.ParadaLinea;
-import com.gianmdp03.cuando_llega_pro.domain.transit.repository.ParadaLineaRepository;
+import com.gianmdp03.cuando_llega_pro.domain.transit.model.TransitLine;
+import com.gianmdp03.cuando_llega_pro.domain.transit.model.TransitStop;
+import com.gianmdp03.cuando_llega_pro.domain.transit.model.StopLineDirection;
+import com.gianmdp03.cuando_llega_pro.domain.transit.repository.StopLineDirectionRepository;
 import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -16,26 +16,26 @@ import org.springframework.transaction.annotation.Transactional;
 public class TransitDataPersistenceService {
 
     private final EntityManager entityManager;
-    private final ParadaLineaRepository paradaLineaRepository;
+    private final StopLineDirectionRepository stopTransitLineRepository;
 
     @Transactional
     public void replaceEmptyCatalog(JsonNode dataset, int batchSize) {
-        JsonNode lineas = dataset.path("lineas");
-        if (!lineas.isArray()) {
-            throw new IllegalArgumentException("El dataset no contiene el arreglo lineas");
+        JsonNode directions = dataset.path("lines");
+        if (!directions.isArray()) {
+            throw new IllegalArgumentException("El dataset no contiene el arreglo directions");
         }
-        for (JsonNode lineaNode : lineas) {
-            upsertLinea(lineaNode.path("codigoLinea").asText(), lineaNode.path("nombre").asText());
+        for (JsonNode lineNode : directions) {
+            upsertTransitLine(lineNode.path("codeTransitLine").asText(), lineNode.path("name").asText());
         }
         entityManager.flush();
 
-        JsonNode paradas = dataset.path("paradas");
-        if (!paradas.isArray()) {
-            throw new IllegalArgumentException("El dataset no contiene el arreglo paradas");
+        JsonNode stops = dataset.path("stops");
+        if (!stops.isArray()) {
+            throw new IllegalArgumentException("El dataset no contiene el arreglo stops");
         }
         int processed = 0;
-        for (JsonNode paradaNode : paradas) {
-            persistParada(paradaNode);
+        for (JsonNode stopNode : stops) {
+            persistTransitStop(stopNode);
             if (++processed % batchSize == 0) {
                 entityManager.flush();
                 entityManager.clear();
@@ -45,85 +45,86 @@ public class TransitDataPersistenceService {
     }
 
     @Transactional
-    public void synchronizeLineStops(Linea linea, JsonNode response) {
-        JsonNode paradas = response.has("paradas") ? response.path("paradas") : response;
-        if (!paradas.isArray()) {
+    public void synchronizeLineStops(TransitLine line, JsonNode response) {
+        // MGP's upstream response is intentionally parsed with its original Spanish field name.
+        JsonNode stops = response.has("paradas") ? response.path("paradas") : response;
+        if (!stops.isArray()) {
             return;
         }
-        for (JsonNode paradaNode : paradas) {
-            String identificador = firstText(paradaNode, "Identificador", "identificador", "Codigo", "codigo");
-            if (identificador == null) {
+        for (JsonNode stopNode : stops) {
+            String identifier = firstText(stopNode, "Identificador", "identifier", "Codigo", "code");
+            if (identifier == null) {
                 continue;
             }
 
-            Parada parada = entityManager.find(Parada.class, identificador);
-            if (parada == null) {
-                parada = new Parada(
-                        identificador,
-                        firstText(paradaNode, "Codigo", "codigo"),
-                        firstText(paradaNode, "Descripcion", "descripcion"),
-                        firstDouble(paradaNode, "LatitudParada", "latitud", "Latitud"),
-                        firstDouble(paradaNode, "LongitudParada", "longitud", "Longitud")
+            TransitStop stop = entityManager.find(TransitStop.class, identifier);
+            if (stop == null) {
+                stop = new TransitStop(
+                        identifier,
+                        firstText(stopNode, "Codigo", "code"),
+                        firstText(stopNode, "Descripcion", "description"),
+                        firstDouble(stopNode, "LatitudTransitStop", "latitude", "Latitud"),
+                        firstDouble(stopNode, "LongitudTransitStop", "longitude", "Longitud")
                 );
-                entityManager.persist(parada);
+                entityManager.persist(stop);
             } else {
-                updateParada(parada, paradaNode);
+                updateTransitStop(stop, stopNode);
             }
 
-            String bandera = firstText(paradaNode, "AbreviaturaBandera", "bandera");
-            if (bandera != null && paradaLineaRepository
-                    .findByParadaIdentificadorAndLineaCodigoAndBandera(identificador, linea.getCodigo(), bandera)
+            String direction = firstText(stopNode, "AbreviaturaBandera", "direction");
+            if (direction != null && stopTransitLineRepository
+                    .findByTransitStopIdentificadorAndTransitLineCodigoAndBandera(identifier, line.getCode(), direction)
                     .isEmpty()) {
-                parada.addLinea(new ParadaLinea(
-                        entityManager.getReference(Linea.class, linea.getCodigo()),
-                        bandera,
-                        firstText(paradaNode, "AbreviaturaAmpliadaBandera", "banderaAmpliada")
+                stop.addTransitLine(new StopLineDirection(
+                        entityManager.getReference(TransitLine.class, line.getCode()),
+                        direction,
+                        firstText(stopNode, "AbreviaturaAmpliadaBandera", "expandedDirection")
                 ));
             }
         }
     }
 
-    private void persistParada(JsonNode paradaNode) {
-        String identificador = requiredText(paradaNode, "identificador");
-        Parada parada = new Parada(
-                identificador,
-                textOrNull(paradaNode, "codigo"),
-                textOrNull(paradaNode, "descripcion"),
-                doubleOrNull(paradaNode, "latitud"),
-                doubleOrNull(paradaNode, "longitud")
+    private void persistTransitStop(JsonNode stopNode) {
+        String identifier = requiredText(stopNode, "identifier");
+        TransitStop stop = new TransitStop(
+                identifier,
+                textOrNull(stopNode, "code"),
+                textOrNull(stopNode, "description"),
+                doubleOrNull(stopNode, "latitude"),
+                doubleOrNull(stopNode, "longitude")
         );
-        for (JsonNode lineaNode : paradaNode.path("lineas")) {
-            String codigoLinea = requiredText(lineaNode, "codigoLinea");
-            parada.addLinea(new ParadaLinea(
-                    entityManager.getReference(Linea.class, codigoLinea),
-                    requiredText(lineaNode, "bandera"),
-                    textOrNull(lineaNode, "banderaAmpliada")
+        for (JsonNode lineNode : stopNode.path("directions")) {
+            String codeTransitLine = requiredText(lineNode, "codeTransitLine");
+            stop.addTransitLine(new StopLineDirection(
+                    entityManager.getReference(TransitLine.class, codeTransitLine),
+                    requiredText(lineNode, "direction"),
+                    textOrNull(lineNode, "expandedDirection")
             ));
         }
-        entityManager.persist(parada);
+        entityManager.persist(stop);
     }
 
-    private void upsertLinea(String codigo, String nombre) {
-        if (codigo == null || codigo.isBlank()) {
-            throw new IllegalArgumentException("Una línea del dataset no tiene codigoLinea");
+    private void upsertTransitLine(String code, String name) {
+        if (code == null || code.isBlank()) {
+            throw new IllegalArgumentException("Una línea del dataset no tiene codeTransitLine");
         }
-        Linea linea = entityManager.find(Linea.class, codigo);
-        if (linea == null) {
-            entityManager.persist(new Linea(codigo, nombre));
+        TransitLine line = entityManager.find(TransitLine.class, code);
+        if (line == null) {
+            entityManager.persist(new TransitLine(code, name));
         } else {
-            linea.setNombre(nombre);
+            line.setName(name);
         }
     }
 
-    private void updateParada(Parada parada, JsonNode source) {
-        String codigo = firstText(source, "Codigo", "codigo");
-        String descripcion = firstText(source, "Descripcion", "descripcion");
-        Double latitud = firstDouble(source, "LatitudParada", "latitud", "Latitud");
-        Double longitud = firstDouble(source, "LongitudParada", "longitud", "Longitud");
-        if (codigo != null) parada.setCodigo(codigo);
-        if (descripcion != null) parada.setDescripcion(descripcion);
-        if (latitud != null) parada.setLatitud(latitud);
-        if (longitud != null) parada.setLongitud(longitud);
+    private void updateTransitStop(TransitStop stop, JsonNode source) {
+        String code = firstText(source, "Codigo", "code");
+        String description = firstText(source, "Descripcion", "description");
+        Double latitude = firstDouble(source, "LatitudTransitStop", "latitude", "Latitud");
+        Double longitude = firstDouble(source, "LongitudTransitStop", "longitude", "Longitud");
+        if (code != null) stop.setCode(code);
+        if (description != null) stop.setDescription(description);
+        if (latitude != null) stop.setLatitude(latitude);
+        if (longitude != null) stop.setLongitude(longitude);
     }
 
     private static String requiredText(JsonNode node, String field) {

@@ -12,17 +12,17 @@ import lombok.Setter;
 
 /** A public transport line in the static MGP catalogue. */
 @Entity
-@Table(name = "lineas")
+@Table(name = "transit_lines")
 @Getter
 @Setter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor
-public class Linea {
+public class TransitLine {
 
     @Id
-    @Column(name = "codigo", nullable = false, length = 32)
-    private String codigo;
+    @Column(name = "code", nullable = false, length = 32)
+    private String code;
 
-    @Column(name = "nombre", nullable = false, length = 128)
-    private String nombre;
+    @Column(name = "name", nullable = false, length = 128)
+    private String name;
 }
