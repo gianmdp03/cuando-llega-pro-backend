@@ -14,7 +14,11 @@ class CaffeineCacheConfigTest {
         CaffeineCacheConfig config = new CaffeineCacheConfig();
         CaffeineCacheManager cacheManager = (CaffeineCacheManager) config.cacheManager();
 
-        assertThat(cacheManager.getCacheNames()).containsExactlyInAnyOrder("arrivals", "lines");
+        assertThat(cacheManager.getCacheNames()).containsExactlyInAnyOrder(
+                CaffeineCacheConfig.ARRIVALS_CACHE,
+                CaffeineCacheConfig.LINES_CACHE,
+                CaffeineCacheConfig.TRANSIT_CATALOG_CACHE
+        );
 
         Cache arrivalsCache = cacheManager.getCache("arrivals");
         assertThat(arrivalsCache).isNotNull().isInstanceOf(CaffeineCache.class);

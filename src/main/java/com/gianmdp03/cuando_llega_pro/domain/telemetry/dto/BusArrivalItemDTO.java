@@ -18,6 +18,10 @@ import java.time.Instant;
  * @param timestamp            optional telemetry recording timestamp
  * @param latitude             vehicle GPS latitude coordinate
  * @param longitude            vehicle GPS longitude coordinate
+ * @param scheduleDeviation    time schedule deviation (desvioHorario, e.g. "+01:16")
+ * @param driverId             driver identifier (identificadorChofer, e.g. "PE,509")
+ * @param stopLatitude         latitude coordinate of the stop
+ * @param stopLongitude        longitude coordinate of the stop
  */
 public record BusArrivalItemDTO(
         String lineCode,
@@ -30,8 +34,53 @@ public record BusArrivalItemDTO(
         TelemetryStatus status,
         Instant timestamp,
         Double latitude,
-        Double longitude
+        Double longitude,
+        String scheduleDeviation,
+        String driverId,
+        Double stopLatitude,
+        Double stopLongitude,
+        Double bearing,
+        Double speedKmH
 ) {
+
+    public BusArrivalItemDTO(
+            String lineCode,
+            String branch,
+            Integer remainingMinutes,
+            Integer distanceMeters,
+            String estimatedArrivalTime,
+            String vehicleUnit,
+            Boolean accessible,
+            TelemetryStatus status,
+            Instant timestamp,
+            Double latitude,
+            Double longitude,
+            String scheduleDeviation,
+            String driverId,
+            Double stopLatitude,
+            Double stopLongitude
+    ) {
+        this(lineCode, branch, remainingMinutes, distanceMeters, estimatedArrivalTime,
+                vehicleUnit, accessible, status, timestamp, latitude, longitude,
+                scheduleDeviation, driverId, stopLatitude, stopLongitude, null, null);
+    }
+
+    public BusArrivalItemDTO(
+            String lineCode,
+            String branch,
+            Integer remainingMinutes,
+            Integer distanceMeters,
+            String estimatedArrivalTime,
+            String vehicleUnit,
+            Boolean accessible,
+            TelemetryStatus status,
+            Instant timestamp,
+            Double latitude,
+            Double longitude
+    ) {
+        this(lineCode, branch, remainingMinutes, distanceMeters, estimatedArrivalTime,
+                vehicleUnit, accessible, status, timestamp, latitude, longitude, null, null, null, null);
+    }
 
     public BusArrivalItemDTO(
             String lineCode,
@@ -116,7 +165,35 @@ public record BusArrivalItemDTO(
                 newStatus,
                 this.timestamp,
                 this.latitude,
-                this.longitude
+                this.longitude,
+                this.scheduleDeviation,
+                this.driverId,
+                this.stopLatitude,
+                this.stopLongitude,
+                this.bearing,
+                this.speedKmH
+        );
+    }
+
+    public BusArrivalItemDTO withBearingAndSpeed(Double bearing, Double speedKmH) {
+        return new BusArrivalItemDTO(
+                this.lineCode,
+                this.branch,
+                this.remainingMinutes,
+                this.distanceMeters,
+                this.estimatedArrivalTime,
+                this.vehicleUnit,
+                this.accessible,
+                this.status,
+                this.timestamp,
+                this.latitude,
+                this.longitude,
+                this.scheduleDeviation,
+                this.driverId,
+                this.stopLatitude,
+                this.stopLongitude,
+                bearing,
+                speedKmH
         );
     }
 
@@ -132,7 +209,11 @@ public record BusArrivalItemDTO(
                 this.vehicleUnit,
                 this.accessible,
                 this.remainingMinutes,
-                this.timestamp
+                this.timestamp,
+                this.scheduleDeviation,
+                this.driverId,
+                this.bearing,
+                this.speedKmH
         );
     }
 

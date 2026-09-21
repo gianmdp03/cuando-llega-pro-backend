@@ -1,18 +1,23 @@
 package com.gianmdp03.cuando_llega_pro.domain.transit;
 
+import com.gianmdp03.cuando_llega_pro.domain.transit.dto.ConsolidatedStopDTO;
+import com.gianmdp03.cuando_llega_pro.domain.transit.dto.TransitIntersectionDTO;
 import com.gianmdp03.cuando_llega_pro.domain.transit.dto.TransitLineDTO;
 import com.gianmdp03.cuando_llega_pro.domain.transit.dto.TransitRouteResponseDTO;
 import com.gianmdp03.cuando_llega_pro.domain.transit.dto.TransitStopDTO;
+import com.gianmdp03.cuando_llega_pro.domain.transit.dto.TransitStopWithFlagDTO;
+import com.gianmdp03.cuando_llega_pro.domain.transit.dto.TransitStreetDTO;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 
 /**
- * REST controller exposing municipal transit catalog endpoints (lines, stops, and polyline routes).
+ * REST controller exposing municipal transit catalog endpoints (lines, streets, intersections, stops, routes).
  * Endpoints are protected by JWT authentication (inherited from SecurityConfig).
  */
 @RestController
@@ -26,37 +31,66 @@ public class TransitCatalogController {
     }
 
     /**
-     * Retrieves the entire catalog of transit lines.
-     *
-     * @return 200 OK with list of TransitLineDTO objects
+     * Action: RecuperarLineaPorCuandoLlega
      */
     @GetMapping("/lines")
     public ResponseEntity<List<TransitLineDTO>> getLines() {
-        List<TransitLineDTO> lines = transitCatalogService.getLines();
-        return ResponseEntity.ok(lines);
+        return ResponseEntity.ok(transitCatalogService.getLines());
     }
 
     /**
-     * Retrieves all bus stops for a specific transit line.
-     *
-     * @param lineCode transit line identifier (e.g. "511", "522")
-     * @return 200 OK with list of TransitStopDTO objects
+     * Action: RecuperarCallesPrincipalPorLinea
      */
-    @GetMapping("/lines/{lineCode}/stops")
-    public ResponseEntity<List<TransitStopDTO>> getStops(@PathVariable("lineCode") String lineCode) {
-        List<TransitStopDTO> stops = transitCatalogService.getStopsForLine(lineCode);
-        return ResponseEntity.ok(stops);
+    @GetMapping("/lines/{lineCode}/streets")
+    public ResponseEntity<List<TransitStreetDTO>> getMainStreets(@PathVariable("lineCode") String lineCode) {
+        return ResponseEntity.ok(transitCatalogService.getMainStreetsByLine(lineCode));
     }
 
     /**
-     * Retrieves the route trace and polyline vertices for a specific transit line.
-     *
-     * @param lineCode transit line identifier (e.g. "511", "522")
-     * @return 200 OK with TransitRouteResponseDTO
+     * Action: RecuperarInterseccionPorLineaYCalle
+     */
+    @GetMapping("/lines/{lineCode}/streets/{streetCode}/intersections")
+    public ResponseEntity<List<TransitIntersectionDTO>> getIntersections(
+            @PathVariable("lineCode") String lineCode,
+            @PathVariable("streetCode") String streetCode
+    ) {
+        return ResponseEntity.ok(transitCatalogService.getIntersectionsByLineAndStreet(lineCode, streetCode));
+    }
+
+    /**
+     * Action: RecuperarParadasConBanderaPorLineaCalleEInterseccion
+     */
+    @GetMapping("/lines/{lineCode}/streets/{streetCode}/intersections/{intersectionCode}/stops")
+    public ResponseEntity<List<TransitStopWithFlagDTO>> getStopsWithFlag(
+            @PathVariable("lineCode") String lineCode,
+            @PathVariable("streetCode") String streetCode,
+            @PathVariable("intersectionCode") String intersectionCode
+    ) {
+        return ResponseEntity.ok(transitCatalogService.getStopsWithFlag(lineCode, streetCode, intersectionCode));
+    }
+
+    /**
+     * Action: RecuperarRecorridoParaMapaAbrevYAmpliPorEntidadYLinea
      */
     @GetMapping("/lines/{lineCode}/route")
     public ResponseEntity<TransitRouteResponseDTO> getRoute(@PathVariable("lineCode") String lineCode) {
-        TransitRouteResponseDTO route = transitCatalogService.getRouteTrace(lineCode);
-        return ResponseEntity.ok(route);
+        return ResponseEntity.ok(transitCatalogService.getRouteTrace(lineCode));
+    }
+
+    @GetMapping(value = "/lines/{lineCode}/stops", params = {"streetCode", "intersectionCode"})
+    public ResponseEntity<ConsolidatedStopDTO> getConsolidatedStop(
+            @PathVariable("lineCode") String lineCode,
+            @RequestParam("streetCode") String streetCode,
+            @RequestParam("intersectionCode") String intersectionCode
+    ) {
+        return ResponseEntity.ok(transitCatalogService.getConsolidatedStop(lineCode, streetCode, intersectionCode));
+    }
+
+    /**
+     * Action: RecuperarParadasPorLinea (Legacy / Flat stops)
+     */
+    @GetMapping("/lines/{lineCode}/stops")
+    public ResponseEntity<List<TransitStopDTO>> getStops(@PathVariable("lineCode") String lineCode) {
+        return ResponseEntity.ok(transitCatalogService.getStopsForLine(lineCode));
     }
 }

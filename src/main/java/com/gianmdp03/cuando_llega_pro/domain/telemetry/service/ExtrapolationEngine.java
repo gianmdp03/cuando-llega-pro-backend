@@ -112,6 +112,42 @@ public class ExtrapolationEngine {
     }
 
     /**
+     * Deterministically extrapolates an individual vehicle unit arrival prediction by IdentificadorCoche.
+     *
+     * @param item        the vehicle arrival item to extrapolate
+     * @param currentTime the reference wall-clock time
+     * @return extrapolated BusArrivalItemDTO with updated status and remainingMinutes
+     */
+    public BusArrivalItemDTO extrapolateVehicle(BusArrivalItemDTO item, Instant currentTime) {
+        if (item == null) {
+            return null;
+        }
+        Instant refTime = item.timestamp() != null ? item.timestamp() : currentTime;
+        long delta = Duration.between(refTime, currentTime).toMinutes();
+
+        if (delta <= 0) {
+            return item.withStatusAndRemainingMinutes(
+                    TelemetryStatus.LIVE,
+                    item.remainingMinutes() != null ? item.remainingMinutes() : 0L
+            );
+        } else if (delta > EXPIRATION_THRESHOLD_MINUTES) {
+            return item.withStatusAndRemainingMinutes(TelemetryStatus.EXPIRED, 0L);
+        } else {
+            long remaining = (item.remainingMinutes() != null)
+                    ? Math.max(0L, item.remainingMinutes() - delta)
+                    : 0L;
+            return item.withStatusAndRemainingMinutes(TelemetryStatus.ESTIMATED_FALLBACK, remaining);
+        }
+    }
+
+    /**
+     * Alias for {@link #extrapolateVehicle(BusArrivalItemDTO, Instant)} using wall-clock time.
+     */
+    public BusArrivalItemDTO extrapolateVehicle(BusArrivalItemDTO item) {
+        return extrapolateVehicle(item, Instant.now());
+    }
+
+    /**
      * Alias for {@link #extrapolate(ArrivalResponseDTO, Instant)}.
      *
      * @param cachedTelemetry cached telemetry snapshot

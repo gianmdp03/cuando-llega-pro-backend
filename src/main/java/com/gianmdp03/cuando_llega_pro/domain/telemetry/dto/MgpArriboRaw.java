@@ -5,7 +5,8 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 /**
- * Raw municipal transit arrival item DTO mapping upstream PascalCase JSON keys.
+ * Raw municipal transit arrival item DTO mapping upstream PascalCase JSON keys
+ * matching real HAR contracts.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record MgpArriboRaw(
@@ -21,12 +22,14 @@ public record MgpArriboRaw(
         @JsonProperty("UltimaFechaHoraGPS") @JsonAlias({"ultimaFechaHoraGps", "fechaHoraGps", "timestamp"}) String ultimaFechaHoraGps,
         @JsonProperty("CodigoLineaParada") @JsonAlias({"codigoLineaParada"}) String codigoLineaParada,
         @JsonProperty("distancia") @JsonAlias({"Distancia", "distanciaMetros"}) Integer distancia,
-        @JsonProperty("minutos") @JsonAlias({"Minutos"}) Integer minutos
+        @JsonProperty("minutos") @JsonAlias({"Minutos"}) Integer minutos,
+        @JsonProperty("DesvioHorario") @JsonAlias({"desvioHorario", "desvio"}) String desvioHorario,
+        @JsonProperty("IdentificadorChofer") @JsonAlias({"identificadorChofer", "chofer"}) String identificadorChofer,
+        @JsonProperty("DescripcionCortaBandera") @JsonAlias({"descripcionCortaBandera"}) String descripcionCortaBandera,
+        @JsonProperty("DescripcionCartelBandera") @JsonAlias({"descripcionCartelBandera"}) String descripcionCartelBandera,
+        @JsonProperty("MensajeError") @JsonAlias({"mensajeError"}) String mensajeError
 ) {
 
-    /**
-     * Standard 11-argument constructor matching the upstream MGP schema specification.
-     */
     public MgpArriboRaw(
             String descripcionLinea,
             String descripcionBandera,
@@ -41,6 +44,27 @@ public record MgpArriboRaw(
             String codigoLineaParada
     ) {
         this(descripcionLinea, descripcionBandera, arribo, latitud, longitud,
-                latitudParada, longitudParada, esAdaptado, identificadorCoche, ultimaFechaHoraGps, codigoLineaParada, null, null);
+                latitudParada, longitudParada, esAdaptado, identificadorCoche, ultimaFechaHoraGps,
+                codigoLineaParada, null, null, null, null, null, null, null);
+    }
+
+    public MgpArriboRaw(
+            String descripcionLinea,
+            String descripcionBandera,
+            String arribo,
+            String latitud,
+            String longitud,
+            String latitudParada,
+            String longitudParada,
+            String esAdaptado,
+            String identificadorCoche,
+            String ultimaFechaHoraGps,
+            String codigoLineaParada,
+            Integer distancia,
+            Integer minutos
+    ) {
+        this(descripcionLinea, descripcionBandera, arribo, latitud, longitud,
+                latitudParada, longitudParada, esAdaptado, identificadorCoche, ultimaFechaHoraGps,
+                codigoLineaParada, distancia, minutos, null, null, null, null, null);
     }
 }

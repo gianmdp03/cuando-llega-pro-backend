@@ -34,6 +34,14 @@
             <artifactId>jackson-databind</artifactId>
         </dependency>
 
+        <!-- Source: https://mvnrepository.com/artifact/io.github.resilience4j/resilience4j-circuitbreaker -->
+        <dependency>
+            <groupId>io.github.resilience4j</groupId>
+            <artifactId>resilience4j-circuitbreaker</artifactId>
+            <version>2.4.0</version>
+            <scope>compile</scope>
+        </dependency>
+
         <!-- Seguridad & Criptografía -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

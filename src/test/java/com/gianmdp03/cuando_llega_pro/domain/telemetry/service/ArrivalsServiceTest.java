@@ -259,6 +259,56 @@ class ArrivalsServiceTest {
             assertThat(item.remainingMinutes()).isEqualTo(53);
             assertThat(item.vehicleUnit()).isEqualTo("104");
             assertThat(item.accessible()).isTrue();
+
+            // Verify unit is tracked in vehicleTrackingBuffer
+            assertThat(arrivalsService.getVehicleTrackingBuffer()).containsKey(CACHE_KEY);
+            assertThat(arrivalsService.getVehicleTrackingBuffer().get(CACHE_KEY)).containsKey("104");
+        }
+
+        @Test
+        @DisplayName("GPS Microcut Recovery: Recover missing unit via dead reckoning using vehicleTrackingBuffer")
+        void recoversMissingUnitViaDeadReckoningOnMicrocut() {
+            // Poll 1: Unit 1552 and Unit 1589 arrive
+            String poll1Json = """
+                    [
+                      {"linea": "511", "bandera": "A", "arribo": "15 min", "minutos": 15, "coche": "1552"},
+                      {"linea": "511", "bandera": "A", "arribo": "30 min", "minutos": 30, "coche": "1589"}
+                    ]
+                    """;
+            when(cacheManager.getCache(CaffeineCacheConfig.ARRIVALS_CACHE)).thenReturn(cache);
+            when(cache.get(CACHE_KEY)).thenReturn(null);
+            when(mgpProxyClient.getArrivals(any(), eq("RecuperarProximosArribosW"), eq(STOP_1024), eq(LINE_511)))
+                    .thenReturn(poll1Json);
+
+            ArrivalResponseDTO poll1 = arrivalsService.getArrivals(LINE_511, STOP_1024);
+            assertThat(poll1.arrivals()).hasSize(2);
+            assertThat(arrivalsService.getVehicleTrackingBuffer().get(CACHE_KEY)).containsKeys("1552", "1589");
+
+            // Poll 2: Unit 1552 suffered GPS microcut and is missing from upstream
+            String poll2Json = """
+                    [
+                      {"linea": "511", "bandera": "A", "arribo": "28 min", "minutos": 28, "coche": "1589"}
+                    ]
+                    """;
+            when(mgpProxyClient.getArrivals(any(), eq("RecuperarProximosArribosW"), eq(STOP_1024), eq(LINE_511)))
+                    .thenReturn(poll2Json);
+
+            BusArrivalItemDTO unit1552 = poll1.arrivals().getFirst();
+            when(extrapolationEngine.extrapolateVehicle(eq(unit1552), any()))
+                    .thenReturn(unit1552.withStatusAndRemainingMinutes(TelemetryStatus.ESTIMATED_FALLBACK, 13));
+
+            ArrivalResponseDTO poll2 = arrivalsService.getArrivals(LINE_511, STOP_1024);
+
+            // Both units must be present in consolidated response: Unit 1589 (LIVE) and Unit 1552 (ESTIMATED_FALLBACK)
+            assertThat(poll2.arrivals()).hasSize(2);
+            List<String> units = poll2.arrivals().stream().map(BusArrivalItemDTO::vehicleUnit).toList();
+            assertThat(units).containsExactlyInAnyOrder("1552", "1589");
+
+            BusArrivalItemDTO recovered = poll2.arrivals().stream()
+                    .filter(a -> "1552".equals(a.vehicleUnit()))
+                    .findFirst().orElseThrow();
+            assertThat(recovered.status()).isEqualTo(TelemetryStatus.ESTIMATED_FALLBACK);
+            assertThat(recovered.remainingMinutes()).isEqualTo(13);
         }
 
         @Test

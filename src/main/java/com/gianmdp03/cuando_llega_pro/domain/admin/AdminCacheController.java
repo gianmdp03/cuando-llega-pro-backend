@@ -1,5 +1,7 @@
 package com.gianmdp03.cuando_llega_pro.domain.admin;
 
+import com.gianmdp03.cuando_llega_pro.config.CaffeineCacheConfig;
+import com.gianmdp03.cuando_llega_pro.domain.transit.TransitCatalogRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.cache.Cache;
@@ -25,9 +27,11 @@ public class AdminCacheController {
     private static final Logger log = LoggerFactory.getLogger(AdminCacheController.class);
 
     private final CacheManager cacheManager;
+    private final TransitCatalogRepository transitCatalogRepository;
 
-    public AdminCacheController(CacheManager cacheManager) {
+    public AdminCacheController(CacheManager cacheManager, TransitCatalogRepository transitCatalogRepository) {
         this.cacheManager = cacheManager;
+        this.transitCatalogRepository = transitCatalogRepository;
     }
 
     /**
@@ -60,6 +64,13 @@ public class AdminCacheController {
                 }
             }
             log.info("Admin cleared all registered caches: {}", purgedCaches);
+        }
+
+        if (name == null || name.isBlank() || CaffeineCacheConfig.TRANSIT_CATALOG_CACHE.equalsIgnoreCase(name.trim())) {
+            if (transitCatalogRepository != null) {
+                transitCatalogRepository.deleteAll();
+                log.info("Admin purgó también la tabla PostgreSQL transit_catalog_entries");
+            }
         }
 
         return ResponseEntity.ok(Map.of(

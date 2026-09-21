@@ -135,7 +135,7 @@ public class TelemetryMapper {
 
         String branch = raw.descripcionBandera();
         String vehicleUnit = raw.identificadorCoche();
-        Boolean accessible = "true".equalsIgnoreCase(raw.esAdaptado());
+        Boolean accessible = parseBoolean(raw.esAdaptado());
 
         Integer remainingMinutes = parseRemainingMinutes(raw.arribo());
         // For backwards compatibility with mocks supplying explicit minutes and clock time
@@ -153,8 +153,21 @@ public class TelemetryMapper {
                 vehicleUnit,
                 accessible,
                 remainingMinutes,
-                timestamp
+                timestamp,
+                raw.desvioHorario(),
+                raw.identificadorChofer()
         );
+    }
+
+    /**
+     * Normalizes boolean values from strings ("True", "False", "1", "0", etc.).
+     */
+    public Boolean parseBoolean(String value) {
+        if (value == null || value.isBlank()) {
+            return false;
+        }
+        String clean = value.trim().toLowerCase(Locale.ROOT);
+        return "true".equals(clean) || "1".equals(clean);
     }
 
     /**
@@ -205,6 +218,8 @@ public class TelemetryMapper {
 
         Double latitude = parseCoordinate(raw.latitud());
         Double longitude = parseCoordinate(raw.longitud());
+        Double stopLat = parseCoordinate(raw.latitudParada());
+        Double stopLon = parseCoordinate(raw.longitudParada());
 
         return new BusArrivalItemDTO(
                 arrival.lineCode(),
@@ -217,7 +232,11 @@ public class TelemetryMapper {
                 status,
                 arrival.timestamp(),
                 latitude,
-                longitude
+                longitude,
+                raw.desvioHorario(),
+                raw.identificadorChofer(),
+                stopLat,
+                stopLon
         );
     }
 

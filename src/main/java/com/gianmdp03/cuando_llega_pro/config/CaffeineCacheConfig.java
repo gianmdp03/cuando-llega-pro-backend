@@ -16,10 +16,21 @@ public class CaffeineCacheConfig {
     public static final String ARRIVALS_CACHE = "arrivals";
     public static final String LINES_CACHE = "lines";
     public static final String TRANSIT_CATALOG_CACHE = "transit-catalog";
+    public static final String TRANSIT_MAP_CACHE = "transit-map";
+    public static final String FALLBACK_ARRIVALS_CACHE = "fallback-arrivals";
 
     @Bean
     public CacheManager cacheManager() {
         CaffeineCacheManager cacheManager = new CaffeineCacheManager();
+
+        cacheManager.registerCustomCache(
+                FALLBACK_ARRIVALS_CACHE,
+                Caffeine.newBuilder()
+                        .expireAfterWrite(Duration.ofSeconds(10))
+                        .maximumSize(5_000)
+                        .recordStats()
+                        .build()
+        );
 
         cacheManager.registerCustomCache(
                 ARRIVALS_CACHE,
@@ -43,6 +54,15 @@ public class CaffeineCacheConfig {
                 TRANSIT_CATALOG_CACHE,
                 Caffeine.newBuilder()
                         .maximumSize(2000)
+                        .recordStats()
+                        .build()
+        );
+
+        cacheManager.registerCustomCache(
+                TRANSIT_MAP_CACHE,
+                Caffeine.newBuilder()
+                        .expireAfterWrite(Duration.ofHours(24))
+                        .maximumSize(2_000)
                         .recordStats()
                         .build()
         );

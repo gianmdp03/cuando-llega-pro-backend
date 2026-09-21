@@ -338,5 +338,66 @@ class TelemetryMapperTest {
             assertThat(rawList.getFirst().descripcionLinea()).isEqualTo("522");
             assertThat(rawList.getFirst().arribo()).isEqualTo("arribando");
         }
+
+        @Test
+        @DisplayName("Parses enriched HAR telemetry JSON with driver ID, deviation, and stop coordinates")
+        void parsesEnrichedHarJson() throws Exception {
+            String json = """
+                    {
+                      "CodigoEstado": 0,
+                      "MensajeEstado": "ok",
+                      "arribos": [
+                        {
+                          "DescripcionLinea": "511",
+                          "DescripcionBandera": "A EDISON",
+                          "Arribo": "23 min. aprox.",
+                          "Latitud": "-37.986935",
+                          "Longitud": "-57.569492",
+                          "LatitudParada": "-38.029881",
+                          "LongitudParada": "-57.537932",
+                          "DescripcionCortaBandera": "A EDISON",
+                          "DescripcionCartelBandera": "A EDISON",
+                          "EsAdaptado": "False",
+                          "IdentificadorCoche": "1552",
+                          "IdentificadorChofer": "PE,509",
+                          "DesvioHorario": "+01:16",
+                          "UltimaFechaHoraGPS": "20/09/2026 14:19:22",
+                          "CodigoLineaParada": "98"
+                        }
+                      ]
+                    }
+                    """;
+
+            List<MgpArriboRaw> rawList = mapper.parseRawArrivals(json);
+            assertThat(rawList).hasSize(1);
+
+            MgpArriboRaw raw = rawList.getFirst();
+            assertThat(raw.identificadorCoche()).isEqualTo("1552");
+            assertThat(raw.identificadorChofer()).isEqualTo("PE,509");
+            assertThat(raw.desvioHorario()).isEqualTo("+01:16");
+            assertThat(raw.latitudParada()).isEqualTo("-38.029881");
+            assertThat(raw.longitudParada()).isEqualTo("-57.537932");
+
+            BusArrivalItemDTO item = mapper.toBusArrivalItemDTO(raw, TelemetryStatus.LIVE, "511");
+            assertThat(item.vehicleUnit()).isEqualTo("1552");
+            assertThat(item.driverId()).isEqualTo("PE,509");
+            assertThat(item.scheduleDeviation()).isEqualTo("+01:16");
+            assertThat(item.accessible()).isFalse();
+            assertThat(item.stopLatitude()).isEqualTo(-38.029881);
+            assertThat(item.stopLongitude()).isEqualTo(-57.537932);
+        }
+
+        @Test
+        @DisplayName("Normalizes boolean EsAdaptado correctly for diverse inputs")
+        void normalizesBooleanEsAdaptado() {
+            assertThat(mapper.parseBoolean("True")).isTrue();
+            assertThat(mapper.parseBoolean("true")).isTrue();
+            assertThat(mapper.parseBoolean("1")).isTrue();
+            assertThat(mapper.parseBoolean("False")).isFalse();
+            assertThat(mapper.parseBoolean("false")).isFalse();
+            assertThat(mapper.parseBoolean("0")).isFalse();
+            assertThat(mapper.parseBoolean(null)).isFalse();
+            assertThat(mapper.parseBoolean("")).isFalse();
+        }
     }
 }

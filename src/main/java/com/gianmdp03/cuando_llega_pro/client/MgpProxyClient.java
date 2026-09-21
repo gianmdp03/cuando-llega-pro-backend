@@ -9,16 +9,13 @@ import org.springframework.web.service.annotation.PostExchange;
 
 /**
  * Declarative HTTP client interface for interacting with the Go TLS-spoofing sidecar proxy.
+ * Maps exact municipal upstream actions extracted from real HAR telemetry.
  */
 @HttpExchange(accept = MediaType.APPLICATION_JSON_VALUE)
 public interface MgpProxyClient {
 
     /**
      * Executes a generic query against the Go sidecar proxy endpoint using arbitrary form parameters.
-     *
-     * @param requestId optional correlation ID for request tracing
-     * @param formData  form-encoded parameters to forward to the upstream municipal service
-     * @return raw response body from upstream service as a JSON string
      */
     @PostExchange(value = "/proxy", contentType = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
     String queryProxy(
@@ -27,13 +24,7 @@ public interface MgpProxyClient {
     );
 
     /**
-     * Retrieves arrivals for a specific bus stop and line.
-     *
-     * @param requestId optional correlation ID for request tracing
-     * @param accion    upstream action name (e.g. RecuperarCuandoLlega)
-     * @param stopId    bus stop identifier
-     * @param lineCode  line code identifier
-     * @return raw response body from upstream service as a JSON string
+     * Action: RecuperarProximosArribosW
      */
     @PostExchange(value = "/proxy", contentType = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
     String getArrivals(
@@ -44,11 +35,7 @@ public interface MgpProxyClient {
     );
 
     /**
-     * Retrieves all available transit lines from the upstream service.
-     *
-     * @param id     optional correlation ID for request tracing
-     * @param accion upstream action name (e.g. RecuperarLineas)
-     * @return raw response body from upstream service as a JSON string
+     * Action: RecuperarLineaPorCuandoLlega / RecuperarLineas
      */
     @PostExchange(value = "/proxy", contentType = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
     String getLines(
@@ -57,12 +44,51 @@ public interface MgpProxyClient {
     );
 
     /**
-     * Retrieves all bus stops for a specific line from the upstream service.
-     *
-     * @param id       optional correlation ID for request tracing
-     * @param accion   upstream action name (e.g. RecuperarParadasPorLinea)
-     * @param lineCode transit line identifier
-     * @return raw response body from upstream service as a JSON string
+     * Action: RecuperarCallesPrincipalPorLinea
+     */
+    @PostExchange(value = "/proxy", contentType = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
+    String getMainStreetsByLine(
+            @RequestHeader(name = "X-Request-ID", required = false) String requestId,
+            @RequestParam("accion") String accion,
+            @RequestParam("codLinea") String codLinea
+    );
+
+    /**
+     * Action: RecuperarInterseccionPorLineaYCalle
+     */
+    @PostExchange(value = "/proxy", contentType = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
+    String getIntersectionsByLineAndStreet(
+            @RequestHeader(name = "X-Request-ID", required = false) String requestId,
+            @RequestParam("accion") String accion,
+            @RequestParam("codLinea") String codLinea,
+            @RequestParam("codCalle") String codCalle
+    );
+
+    /**
+     * Action: RecuperarParadasConBanderaPorLineaCalleEInterseccion
+     */
+    @PostExchange(value = "/proxy", contentType = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
+    String getStopsWithFlag(
+            @RequestHeader(name = "X-Request-ID", required = false) String requestId,
+            @RequestParam("accion") String accion,
+            @RequestParam("codLinea") String codLinea,
+            @RequestParam("codCalle") String codCalle,
+            @RequestParam("codInterseccion") String codInterseccion
+    );
+
+    /**
+     * Action: RecuperarRecorridoParaMapaAbrevYAmpliPorEntidadYLinea
+     */
+    @PostExchange(value = "/proxy", contentType = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
+    String getRouteMapByLine(
+            @RequestHeader(name = "X-Request-ID", required = false) String requestId,
+            @RequestParam("accion") String accion,
+            @RequestParam("codLinea") String codLinea,
+            @RequestParam(value = "isSublinea", defaultValue = "0") String isSublinea
+    );
+
+    /**
+     * Legacy Action: RecuperarParadasPorLinea
      */
     @PostExchange(value = "/proxy", contentType = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
     String getStopsByLine(
@@ -72,12 +98,7 @@ public interface MgpProxyClient {
     );
 
     /**
-     * Retrieves the geographic route polyline trace for a specific line from the upstream service.
-     *
-     * @param id       optional correlation ID for request tracing
-     * @param accion   upstream action name (e.g. RecuperarRecorridosPorLinea)
-     * @param lineCode transit line identifier
-     * @return raw response body from upstream service as a JSON string
+     * Legacy Action: RecuperarRecorridosPorLinea
      */
     @PostExchange(value = "/proxy", contentType = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
     String getRouteByLine(

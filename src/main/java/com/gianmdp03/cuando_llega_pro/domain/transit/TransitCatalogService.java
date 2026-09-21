@@ -1,288 +1,388 @@
 package com.gianmdp03.cuando_llega_pro.domain.transit;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.gianmdp03.cuando_llega_pro.client.MgpProxyClient;
 import com.gianmdp03.cuando_llega_pro.config.CaffeineCacheConfig;
-import com.gianmdp03.cuando_llega_pro.domain.transit.dto.RoutePointDTO;
-import com.gianmdp03.cuando_llega_pro.domain.transit.dto.TransitBranchRouteDTO;
+import com.gianmdp03.cuando_llega_pro.domain.transit.dto.ConsolidatedStopDTO;
+import com.gianmdp03.cuando_llega_pro.domain.transit.dto.TransitIntersectionDTO;
 import com.gianmdp03.cuando_llega_pro.domain.transit.dto.TransitLineDTO;
 import com.gianmdp03.cuando_llega_pro.domain.transit.dto.TransitRouteResponseDTO;
 import com.gianmdp03.cuando_llega_pro.domain.transit.dto.TransitStopDTO;
+import com.gianmdp03.cuando_llega_pro.domain.transit.dto.TransitStopWithFlagDTO;
+import com.gianmdp03.cuando_llega_pro.domain.transit.dto.TransitStreetDTO;
 import com.gianmdp03.cuando_llega_pro.exception.UpstreamServiceException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.cache.Cache;
+import org.springframework.cache.CacheManager;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Iterator;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
-/**
- * Service managing the transit catalog for lines, stops, and geographic route traces.
- * Results are cached indefinitely in the "transit-catalog" Caffeine cache bucket.
- */
 @Service
 public class TransitCatalogService {
-
     private static final Logger log = LoggerFactory.getLogger(TransitCatalogService.class);
 
-    private static final String ACTION_RECUPERAR_LINEAS = "RecuperarLineas";
-    private static final String ACTION_RECUPERAR_LINEAS_FALLBACK = "RecuperarLineaPorCuandoLlega";
-    private static final String ACTION_RECUPERAR_PARADAS = "RecuperarParadasPorLinea";
-    private static final String ACTION_RECUPERAR_RECORRIDOS = "RecuperarRecorridosPorLinea";
+    public static final String CACHE_KEY_LINES_ALL = "lines:all";
+    public static final String ACTION_RECUPERAR_LINEAS_FALLBACK = "RecuperarLineaPorCuandoLlega";
+    public static final String ACTION_RECUPERAR_CALLES_PRINCIPAL = "RecuperarCallesPrincipalPorLinea";
+    public static final String ACTION_RECUPERAR_INTERSECCION = "RecuperarInterseccionPorLineaYCalle";
+    public static final String ACTION_RECUPERAR_PARADAS_BANDERA = "RecuperarParadasConBanderaPorLineaCalleEInterseccion";
+    public static final String ACTION_RECUPERAR_RECORRIDO_MAPA = "RecuperarRecorridoParaMapaAbrevYAmpliPorEntidadYLinea";
+    public static final String ACTION_RECUPERAR_PARADAS_LEGACY = "RecuperarParadasPorLinea";
 
     private final MgpProxyClient mgpProxyClient;
+    private final TransitCatalogRepository catalogRepository;
+    private final CacheManager cacheManager;
     private final ObjectMapper objectMapper;
+    private final TransitLineResolver transitLineResolver;
+    private final StopLocationRepository stopLocationRepository;
 
-    public TransitCatalogService(MgpProxyClient mgpProxyClient, ObjectMapper objectMapper) {
+    @Autowired
+    public TransitCatalogService(
+            MgpProxyClient mgpProxyClient,
+            TransitCatalogRepository catalogRepository,
+            CacheManager cacheManager,
+            ObjectMapper objectMapper,
+            TransitLineResolver transitLineResolver,
+            @Autowired(required = false) StopLocationRepository stopLocationRepository
+    ) {
         this.mgpProxyClient = mgpProxyClient;
-        this.objectMapper = objectMapper != null ? objectMapper : new ObjectMapper();
+        this.catalogRepository = catalogRepository;
+        this.cacheManager = cacheManager;
+        this.objectMapper = objectMapper;
+        this.transitLineResolver = transitLineResolver != null ? transitLineResolver : new TransitLineResolver();
+        this.stopLocationRepository = stopLocationRepository;
     }
 
-    /**
-     * Retrieves all transit lines, cached with key 'all_lines'.
-     *
-     * @return list of clean TransitLineDTO objects
-     */
-    @Cacheable(value = CaffeineCacheConfig.TRANSIT_CATALOG_CACHE, key = "'all_lines'")
+    public TransitCatalogService(
+            MgpProxyClient mgpProxyClient,
+            TransitCatalogRepository catalogRepository,
+            CacheManager cacheManager,
+            ObjectMapper objectMapper,
+            TransitLineResolver transitLineResolver
+    ) {
+        this(mgpProxyClient, catalogRepository, cacheManager, objectMapper, transitLineResolver, null);
+    }
+
+    public TransitCatalogService(
+            MgpProxyClient mgpProxyClient,
+            ObjectMapper objectMapper,
+            TransitCatalogRepository catalogRepository,
+            TransitLineResolver transitLineResolver
+    ) {
+        this(mgpProxyClient, catalogRepository, null, objectMapper, transitLineResolver, null);
+    }
+
     public List<TransitLineDTO> getLines() {
-        String requestId = UUID.randomUUID().toString();
-        log.info("Fetching transit lines from upstream proxy (requestId={})", requestId);
-
-        try {
-            String rawJson = mgpProxyClient.getLines(requestId, ACTION_RECUPERAR_LINEAS);
-            if (rawJson == null || rawJson.isBlank() || "[]".equals(rawJson.trim())) {
-                rawJson = mgpProxyClient.getLines(requestId, ACTION_RECUPERAR_LINEAS_FALLBACK);
-            }
-
-            if (rawJson == null || rawJson.isBlank()) {
-                return List.of();
-            }
-
-            JsonNode root = objectMapper.readTree(rawJson);
-            List<JsonNode> lineNodes = extractArrayElements(root, "lineas", "lines", "data", "resultado", "items");
-
-            List<TransitLineDTO> result = new ArrayList<>();
-            for (JsonNode node : lineNodes) {
-                String id = parseText(node, "id", "Id", "CodigoLineaParada", "codigoLineaParada", "Codigo", "codigo", "CodigoLinea");
-                String codigo = parseText(node, "codigo", "Codigo", "codigoLinea", "CodigoLinea", "Descripcion", "descripcion");
-                String descripcion = parseText(node, "descripcion", "Descripcion", "nombre", "Nombre", "DescripcionLinea", "descripcionLinea");
-
-                if (id == null && codigo != null) {
-                    id = codigo;
-                }
-                if (codigo == null && id != null) {
-                    codigo = id;
-                }
-                if (descripcion == null) {
-                    descripcion = (codigo != null) ? codigo : id;
-                }
-
-                if (id != null || codigo != null || descripcion != null) {
-                    result.add(new TransitLineDTO(id, codigo, descripcion));
+        return getOrFetch(CACHE_KEY_LINES_ALL, "LINES", new TypeReference<List<TransitLineDTO>>() {}, () -> {
+            String raw = mgpProxyClient.getLines(UUID.randomUUID().toString(), ACTION_RECUPERAR_LINEAS_FALLBACK);
+            JsonNode root = objectMapper.readTree(raw);
+            JsonNode array = root.hasNonNull("lineas") ? root.get("lineas") : root;
+            List<TransitLineDTO> list = new ArrayList<>();
+            if (array != null && array.isArray()) {
+                for (JsonNode n : array) {
+                    list.add(new TransitLineDTO(
+                            n.path("CodigoLineaParada").asText(),
+                            n.path("Descripcion").asText(),
+                            n.path("CodigoEntidad").asText(),
+                            n.path("CodigoEmpresa").asInt(0)
+                    ));
                 }
             }
-
-            return result;
-        } catch (Exception ex) {
-            log.error("Failed to retrieve transit lines from upstream: {}", ex.getMessage(), ex);
-            throw new UpstreamServiceException("Failed to retrieve transit lines from upstream proxy", ex);
-        }
+            return list;
+        });
     }
 
-    /**
-     * Retrieves all bus stops for a specific line, cached with key 'stops:' + lineCode.
-     *
-     * @param lineCode transit line code
-     * @return list of clean TransitStopDTO objects
-     */
-    @Cacheable(value = CaffeineCacheConfig.TRANSIT_CATALOG_CACHE, key = "'stops:' + #lineCode")
-    public List<TransitStopDTO> getStopsForLine(String lineCode) {
-        if (lineCode == null || lineCode.isBlank()) {
-            return List.of();
-        }
-
-        String requestId = UUID.randomUUID().toString();
-        log.info("Fetching transit stops for line {} from upstream proxy (requestId={})", lineCode, requestId);
-
-        try {
-            String rawJson = mgpProxyClient.getStopsByLine(requestId, ACTION_RECUPERAR_PARADAS, lineCode);
-            if (rawJson == null || rawJson.isBlank()) {
-                return List.of();
+    @Cacheable(CaffeineCacheConfig.TRANSIT_CATALOG_CACHE)
+    public List<TransitStreetDTO> getMainStreetsByLine(String lineCode) {
+        String internalLine = transitLineResolver.toInternalCode(lineCode);
+        String cacheKey = "streets:" + internalLine;
+        return getOrFetch(cacheKey, "STREETS", new TypeReference<List<TransitStreetDTO>>() {}, () -> {
+            String raw = mgpProxyClient.getMainStreetsByLine(UUID.randomUUID().toString(), ACTION_RECUPERAR_CALLES_PRINCIPAL, internalLine);
+            JsonNode root = objectMapper.readTree(raw);
+            JsonNode array = root.hasNonNull("calles") ? root.get("calles") : root;
+            List<TransitStreetDTO> list = new ArrayList<>();
+            if (array != null && array.isArray()) {
+                for (JsonNode n : array) {
+                    list.add(new TransitStreetDTO(n.path("Codigo").asText(), n.path("Descripcion").asText()));
+                }
             }
-
-            JsonNode root = objectMapper.readTree(rawJson);
-            List<JsonNode> stopNodes = extractArrayElements(root, "paradas", "stops", "items", "data", "resultado");
-
-            List<TransitStopDTO> result = new ArrayList<>();
-            for (JsonNode node : stopNodes) {
-                String id = parseText(node, "Identificador", "identificador", "Codigo", "codigo", "id", "Id", "codigoParada");
-                String nombre = parseText(node, "Descripcion", "descripcion", "nombre", "Nombre", "AbreviaturaBandera", "abreviaturaBandera");
-                String calle = parseText(node, "Calle", "calle", "callePrincipal", "Interseccion", "interseccion", "nombreCalle");
-                Double lat = parseCoordinate(node, "LatitudParada", "latitudParada", "Latitud", "latitud", "lat", "latitude");
-                Double lon = parseCoordinate(node, "LongitudParada", "longitudParada", "Longitud", "longitud", "lon", "lng", "longitude");
-
-                result.add(new TransitStopDTO(id, nombre, calle, lat, lon));
-            }
-
-            return result;
-        } catch (Exception ex) {
-            log.error("Failed to retrieve transit stops for line {}: {}", lineCode, ex.getMessage(), ex);
-            throw new UpstreamServiceException("Failed to retrieve transit stops for line " + lineCode, ex);
-        }
+            return list;
+        });
     }
 
-    /**
-     * Retrieves geographic polyline vertices for rendering the line trajectory, cached with key 'route:' + lineCode.
-     *
-     * @param lineCode transit line code
-     * @return structured TransitRouteResponseDTO with branches and coordinate lists
-     */
-    @Cacheable(value = CaffeineCacheConfig.TRANSIT_CATALOG_CACHE, key = "'route:' + #lineCode")
+    @Cacheable(CaffeineCacheConfig.TRANSIT_CATALOG_CACHE)
+    public List<TransitIntersectionDTO> getIntersectionsByLineAndStreet(String lineCode, String streetCode) {
+        String internalLine = transitLineResolver.toInternalCode(lineCode);
+        String cacheKey = "intersections:" + internalLine + ":" + streetCode;
+        return getOrFetch(cacheKey, "INTERSECTIONS", new TypeReference<List<TransitIntersectionDTO>>() {}, () -> {
+            String raw = mgpProxyClient.getIntersectionsByLineAndStreet(
+                    UUID.randomUUID().toString(), ACTION_RECUPERAR_INTERSECCION, internalLine, streetCode
+            );
+            JsonNode root = objectMapper.readTree(raw);
+            JsonNode array = root.hasNonNull("calles") ? root.get("calles") : root;
+            List<TransitIntersectionDTO> list = new ArrayList<>();
+            if (array != null && array.isArray()) {
+                for (JsonNode n : array) {
+                    list.add(new TransitIntersectionDTO(n.path("Codigo").asText(), n.path("Descripcion").asText()));
+                }
+            }
+            return list;
+        });
+    }
+
+    @Cacheable(CaffeineCacheConfig.TRANSIT_CATALOG_CACHE)
+    public ConsolidatedStopDTO getConsolidatedStop(String lineCode, String streetCode, String intersectionCode) {
+        String internalLine = transitLineResolver.toInternalCode(lineCode);
+        String cacheKey = "stops_consolidated:" + internalLine + ":" + streetCode + ":" + intersectionCode;
+        return getOrFetch(cacheKey, "STOPS_CONSOLIDATED", new TypeReference<ConsolidatedStopDTO>() {}, () -> {
+            String raw = mgpProxyClient.getStopsWithFlag(
+                    UUID.randomUUID().toString(), ACTION_RECUPERAR_PARADAS_BANDERA,
+                    internalLine, streetCode, intersectionCode
+            );
+            JsonNode root = objectMapper.readTree(raw);
+            JsonNode array = root.hasNonNull("paradas") ? root.get("paradas") : root;
+            String stopId = null;
+            List<String> banderas = new ArrayList<>();
+            if (array != null && array.isArray()) {
+                for (JsonNode n : array) {
+                    if (stopId == null) {
+                        String id = n.path("Identificador").asText();
+                        if (id == null || id.isBlank()) {
+                            id = n.path("Codigo").asText();
+                        }
+                        if (id != null && !id.isBlank()) {
+                            stopId = id;
+                        }
+                    }
+                    String bandera = n.path("AbreviaturaBandera").asText();
+                    if (bandera == null || bandera.isBlank()) {
+                        bandera = n.path("AbreviaturaAmpliadaBandera").asText();
+                    }
+                    if (bandera != null && !bandera.isBlank() && !banderas.contains(bandera)) {
+                        banderas.add(bandera);
+                    }
+                }
+            }
+            return new ConsolidatedStopDTO(stopId, streetCode, intersectionCode, banderas);
+        });
+    }
+
+    public List<TransitStopWithFlagDTO> getStopsWithFlag(String lineCode, String streetCode, String intersectionCode) {
+        String internalLine = transitLineResolver.toInternalCode(lineCode);
+        String cacheKey = "stops_flag:" + internalLine + ":" + streetCode + ":" + intersectionCode;
+        return getOrFetch(cacheKey, "STOPS_FLAG", new TypeReference<List<TransitStopWithFlagDTO>>() {}, () -> {
+            String raw = mgpProxyClient.getStopsWithFlag(
+                    UUID.randomUUID().toString(), ACTION_RECUPERAR_PARADAS_BANDERA,
+                    internalLine, streetCode, intersectionCode
+            );
+            JsonNode root = objectMapper.readTree(raw);
+            JsonNode array = root.hasNonNull("paradas") ? root.get("paradas") : root;
+            List<TransitStopWithFlagDTO> list = new ArrayList<>();
+            if (array != null && array.isArray()) {
+                for (JsonNode n : array) {
+                    String codigo = n.path("Codigo").asText();
+                    String identificador = n.path("Identificador").asText();
+                    Double lat = n.hasNonNull("LatitudParada") ? n.get("LatitudParada").asDouble() : null;
+                    Double lon = n.hasNonNull("LongitudParada") ? n.get("LongitudParada").asDouble() : null;
+
+                    if ((lat == null || lon == null) && stopLocationRepository != null) {
+                        var loc = (identificador != null && !identificador.isBlank())
+                                ? stopLocationRepository.findById(identificador).orElse(null)
+                                : null;
+                        if (loc == null && codigo != null && !codigo.isBlank()) {
+                            loc = stopLocationRepository.findById(codigo).orElse(null);
+                        }
+                        if (loc != null) {
+                            if (lat == null) lat = loc.getLatitude();
+                            if (lon == null) lon = loc.getLongitude();
+                        }
+                    }
+
+                    list.add(new TransitStopWithFlagDTO(
+                            codigo,
+                            identificador,
+                            n.path("Descripcion").asText(),
+                            n.path("AbreviaturaBandera").asText(),
+                            n.path("AbreviaturaAmpliadaBandera").asText(),
+                            lat,
+                            lon
+                    ));
+                }
+            }
+            return list;
+        });
+    }
+
     public TransitRouteResponseDTO getRouteTrace(String lineCode) {
-        if (lineCode == null || lineCode.isBlank()) {
-            return new TransitRouteResponseDTO(lineCode, List.of(), List.of(), List.of());
-        }
-
-        String requestId = UUID.randomUUID().toString();
-        log.info("Fetching route trace for line {} from upstream proxy (requestId={})", lineCode, requestId);
-
-        try {
-            String rawJson = mgpProxyClient.getRouteByLine(requestId, ACTION_RECUPERAR_RECORRIDOS, lineCode);
-            if (rawJson == null || rawJson.isBlank()) {
-                return new TransitRouteResponseDTO(lineCode, List.of(), List.of(), List.of());
-            }
-
-            JsonNode root = objectMapper.readTree(rawJson);
-            List<JsonNode> pointNodes = extractArrayElements(root, "puntos", "recorridos", "points", "routes", "items", "data");
-
-            Map<String, List<RoutePointDTO>> branchPointsMap = new LinkedHashMap<>();
-            Map<String, String> branchDescMap = new LinkedHashMap<>();
-            List<RoutePointDTO> allPoints = new ArrayList<>();
+        String internalLine = transitLineResolver.toInternalCode(lineCode);
+        String cacheKey = "route:" + internalLine;
+        return getOrFetch(cacheKey, "ROUTE", new TypeReference<TransitRouteResponseDTO>() {}, () -> {
+            String raw = mgpProxyClient.getRouteMapByLine(
+                    UUID.randomUUID().toString(), ACTION_RECUPERAR_RECORRIDO_MAPA, internalLine, "0"
+            );
+            JsonNode root = objectMapper.readTree(raw);
+            JsonNode array = root.hasNonNull("puntos") ? root.get("puntos") : (root.isArray() ? root : null);
+            java.util.Map<String, List<com.gianmdp03.cuando_llega_pro.domain.transit.dto.RoutePointDTO>> branchPointsMap = new java.util.LinkedHashMap<>();
+            java.util.Map<String, String> branchDescMap = new java.util.LinkedHashMap<>();
+            List<com.gianmdp03.cuando_llega_pro.domain.transit.dto.RoutePointDTO> allPoints = new ArrayList<>();
             List<List<Double>> allCoordinates = new ArrayList<>();
 
-            for (JsonNode node : pointNodes) {
-                Double lat = parseCoordinate(node, "Latitud", "latitud", "lat", "latitude");
-                Double lon = parseCoordinate(node, "Longitud", "longitud", "lon", "lng", "longitude");
+            if (array != null && array.isArray()) {
+                for (JsonNode node : array) {
+                    Double lat = node.hasNonNull("Latitud") ? node.get("Latitud").asDouble() : null;
+                    Double lon = node.hasNonNull("Longitud") ? node.get("Longitud").asDouble() : null;
+                    if (lat == null || lon == null) continue;
 
-                if (lat == null || lon == null) {
-                    continue;
+                    String bandera = node.hasNonNull("AbreviaturaBanderaSMP") ? node.get("AbreviaturaBanderaSMP").asText() : "Principal";
+                    String descripcion = node.hasNonNull("Descripcion") ? node.get("Descripcion").asText() : "";
+                    if (!branchDescMap.containsKey(bandera)) {
+                        branchDescMap.put(bandera, descripcion);
+                    }
+                    Boolean isPuntoPaso = node.path("IsPuntoPaso").asBoolean(false);
+
+                    var point = new com.gianmdp03.cuando_llega_pro.domain.transit.dto.RoutePointDTO(lat, lon, descripcion, isPuntoPaso);
+                    allPoints.add(point);
+                    allCoordinates.add(List.of(lat, lon));
+                    branchPointsMap.computeIfAbsent(bandera, k -> new ArrayList<>()).add(point);
                 }
-
-                String bandera = parseText(node, "AbreviaturaBanderaSMP", "bandera", "Bandera", "ramal", "Ramal");
-                if (bandera == null || bandera.isBlank()) {
-                    bandera = "Principal";
-                }
-
-                String descripcion = parseText(node, "Descripcion", "descripcion", "nombre");
-                if (descripcion != null && !branchDescMap.containsKey(bandera)) {
-                    branchDescMap.put(bandera, descripcion);
-                }
-
-                Boolean isPuntoPaso = parseBoolean(node, "IsPuntoPaso", "isPuntoPaso");
-
-                RoutePointDTO point = new RoutePointDTO(lat, lon, descripcion, isPuntoPaso);
-                allPoints.add(point);
-                allCoordinates.add(List.of(lat, lon));
-
-                branchPointsMap.computeIfAbsent(bandera, k -> new ArrayList<>()).add(point);
             }
 
-            List<TransitBranchRouteDTO> branches = new ArrayList<>();
-            for (Map.Entry<String, List<RoutePointDTO>> entry : branchPointsMap.entrySet()) {
+            List<com.gianmdp03.cuando_llega_pro.domain.transit.dto.TransitBranchRouteDTO> branches = new ArrayList<>();
+            for (java.util.Map.Entry<String, List<com.gianmdp03.cuando_llega_pro.domain.transit.dto.RoutePointDTO>> entry : branchPointsMap.entrySet()) {
                 String bandera = entry.getKey();
-                List<RoutePointDTO> bPoints = entry.getValue();
+                List<com.gianmdp03.cuando_llega_pro.domain.transit.dto.RoutePointDTO> bPoints = entry.getValue();
                 List<List<Double>> bCoords = bPoints.stream()
                         .map(p -> List.of(p.latitude(), p.longitude()))
                         .toList();
                 String desc = branchDescMap.getOrDefault(bandera, bandera);
-                branches.add(new TransitBranchRouteDTO(bandera, desc, bPoints, bCoords));
+                branches.add(new com.gianmdp03.cuando_llega_pro.domain.transit.dto.TransitBranchRouteDTO(bandera, desc, bPoints, bCoords));
             }
 
             return new TransitRouteResponseDTO(lineCode, branches, allPoints, allCoordinates);
-        } catch (Exception ex) {
-            log.error("Failed to retrieve route trace for line {}: {}", lineCode, ex.getMessage(), ex);
-            throw new UpstreamServiceException("Failed to retrieve route trace for line " + lineCode, ex);
-        }
+        });
     }
 
-    private Double parseCoordinate(JsonNode node, String... fieldNames) {
-        for (String field : fieldNames) {
-            if (node.hasNonNull(field)) {
-                JsonNode val = node.get(field);
-                if (val.isNumber()) {
-                    return val.asDouble();
-                } else if (val.isTextual()) {
-                    String text = val.asText().trim().replace(',', '.');
-                    try {
-                        return Double.parseDouble(text);
-                    } catch (NumberFormatException ignored) {}
+    public List<TransitStopDTO> getStopsForLine(String lineCode) {
+        String internalLine = transitLineResolver.toInternalCode(lineCode);
+        String cacheKey = "stops:" + internalLine;
+        return getOrFetch(cacheKey, "STOPS", new TypeReference<List<TransitStopDTO>>() {}, () -> {
+            String raw = mgpProxyClient.getStopsByLine(UUID.randomUUID().toString(), ACTION_RECUPERAR_PARADAS_LEGACY, internalLine);
+            JsonNode root = objectMapper.readTree(raw);
+            JsonNode array = root.hasNonNull("paradas") ? root.get("paradas") : (root.isArray() ? root : null);
+            List<TransitStopDTO> list = new ArrayList<>();
+            if (array != null && array.isArray()) {
+                for (JsonNode n : array) {
+                    String id = n.hasNonNull("Identificador") ? n.get("Identificador").asText() : n.path("Codigo").asText();
+                    String nombre = n.hasNonNull("Descripcion") ? n.get("Descripcion").asText() : n.path("AbreviaturaBandera").asText();
+                    String calle = n.path("Calle").asText(null);
+                    Double lat = null;
+                    if (n.hasNonNull("LatitudParada")) {
+                        lat = n.get("LatitudParada").asDouble();
+                    } else if (n.hasNonNull("Latitud")) {
+                        lat = n.get("Latitud").asDouble();
+                    }
+
+                    Double lon = null;
+                    if (n.hasNonNull("LongitudParada")) {
+                        lon = n.get("LongitudParada").asDouble();
+                    } else if (n.hasNonNull("Longitud")) {
+                        lon = n.get("Longitud").asDouble();
+                    }
+
+                    list.add(new TransitStopDTO(id, nombre, calle, lat, lon));
                 }
             }
-        }
-        return null;
-    }
-
-    private String parseText(JsonNode node, String... fieldNames) {
-        for (String field : fieldNames) {
-            if (node.hasNonNull(field)) {
-                String text = node.get(field).asText().trim();
-                if (!text.isEmpty()) {
-                    return text;
-                }
+            if (stopLocationRepository != null) {
+                list = list.stream().map(stop -> {
+                    if (stop.latitude() == null || stop.longitude() == null) {
+                        return stopLocationRepository.findById(stop.id())
+                                .map(loc -> new TransitStopDTO(
+                                        stop.id(),
+                                        stop.nombre(),
+                                        stop.calle(),
+                                        stop.latitude() != null ? stop.latitude() : loc.getLatitude(),
+                                        stop.longitude() != null ? stop.longitude() : loc.getLongitude()
+                                ))
+                                .orElse(stop);
+                    }
+                    return stop;
+                }).toList();
             }
-        }
-        return null;
-    }
-
-    private Boolean parseBoolean(JsonNode node, String... fieldNames) {
-        for (String field : fieldNames) {
-            if (node.hasNonNull(field)) {
-                JsonNode val = node.get(field);
-                if (val.isBoolean()) {
-                    return val.asBoolean();
-                } else if (val.isTextual()) {
-                    return "true".equalsIgnoreCase(val.asText().trim()) || "1".equals(val.asText().trim());
-                } else if (val.isNumber()) {
-                    return val.asInt() != 0;
-                }
-            }
-        }
-        return null;
-    }
-
-    private List<JsonNode> extractArrayElements(JsonNode root, String... candidateKeys) {
-        if (root == null || root.isNull()) {
-            return List.of();
-        }
-        if (root.isArray()) {
-            List<JsonNode> list = new ArrayList<>();
-            root.forEach(list::add);
             return list;
+        });
+    }
+
+    public TransitLineResolver getTransitLineResolver() {
+        return transitLineResolver;
+    }
+
+    @FunctionalInterface
+    private interface UpstreamFetcher<T> {
+        T fetch() throws Exception;
+    }
+
+    private <T> T getOrFetch(String cacheKey, String catalogType, TypeReference<T> typeRef, UpstreamFetcher<T> fetcher) {
+        // 1. Check Caffeine L1
+        Cache l1 = cacheManager != null ? cacheManager.getCache(CaffeineCacheConfig.TRANSIT_CATALOG_CACHE) : null;
+        if (l1 != null) {
+            Cache.ValueWrapper wrapper = l1.get(cacheKey);
+            if (wrapper != null && wrapper.get() != null) {
+                try {
+                    return objectMapper.convertValue(wrapper.get(), typeRef);
+                } catch (Exception ignored) {}
+            }
         }
-        if (root.isObject()) {
-            for (String key : candidateKeys) {
-                if (root.hasNonNull(key) && root.get(key).isArray()) {
-                    List<JsonNode> list = new ArrayList<>();
-                    root.get(key).forEach(list::add);
-                    return list;
+
+        // 2. Check PostgreSQL L2
+        if (catalogRepository != null) {
+            var l2Entity = catalogRepository.findById(cacheKey);
+            if (l2Entity.isPresent()) {
+                try {
+                    T val = objectMapper.readValue(l2Entity.get().getPayload(), typeRef);
+                    if (l1 != null) l1.put(cacheKey, val);
+                    return val;
+                } catch (Exception ex) {
+                    log.warn("Error deserializando L2 postgres cache para {}", cacheKey);
                 }
             }
-            Iterator<Map.Entry<String, JsonNode>> fields = root.fields();
-            while (fields.hasNext()) {
-                Map.Entry<String, JsonNode> entry = fields.next();
-                if (entry.getValue().isArray()) {
-                    List<JsonNode> list = new ArrayList<>();
-                    entry.getValue().forEach(list::add);
-                    return list;
-                }
-            }
         }
-        return List.of();
+
+        // 3. Fetch Upstream L3
+        try {
+            log.info("Cache Miss L1/L2 para key: {}. Consultando upstream municipal...", cacheKey);
+            T upstreamData = fetcher.fetch();
+            String serialized = objectMapper.writeValueAsString(upstreamData);
+
+            // Guardar L2 Postgres
+            saveL2Async(cacheKey, catalogType, serialized);
+
+            // Guardar L1 Caffeine
+            if (l1 != null) l1.put(cacheKey, upstreamData);
+
+            return upstreamData;
+        } catch (Exception e) {
+            log.error("Error consultando catálogo upstream para key {}: {}", cacheKey, e.getMessage());
+            throw new UpstreamServiceException("Fallo al obtener datos de catálogo para " + cacheKey, e);
+        }
+    }
+
+    @Transactional
+    public void saveL2Async(String cacheKey, String catalogType, String payload) {
+        if (catalogRepository == null) return;
+        try {
+            catalogRepository.save(new TransitCatalogEntity(cacheKey, catalogType, payload, Instant.now()));
+        } catch (Exception ex) {
+            log.warn("No se pudo persistir en L2 Postgres: {}", ex.getMessage());
+        }
     }
 }

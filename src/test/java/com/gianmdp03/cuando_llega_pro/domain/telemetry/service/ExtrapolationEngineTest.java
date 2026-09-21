@@ -361,5 +361,27 @@ class ExtrapolationEngineTest {
             ArrivalResponseDTO resultNow = engine.extrapolateArrivals(cached);
             assertThat(resultNow).isNotNull();
         }
+
+        @Test
+        @DisplayName("extrapolateVehicle extrapolates single unit deterministically by IdentificadorCoche")
+        void extrapolateVehicle_extrapolatesUnitDeterministically() {
+            BusArrivalItemDTO unit = new BusArrivalItemDTO(
+                    "511", "A", 15, 3000, "15 min", "1552", false,
+                    TelemetryStatus.LIVE, baseTimestamp, -37.98, -57.56, "+01:16", "PE,509", -38.02, -57.53
+            );
+
+            // 5 minutes later -> ESTIMATED_FALLBACK, 10 min remaining
+            BusArrivalItemDTO extrapolated = engine.extrapolateVehicle(unit, baseTimestamp.plus(Duration.ofMinutes(5)));
+            assertThat(extrapolated.status()).isEqualTo(TelemetryStatus.ESTIMATED_FALLBACK);
+            assertThat(extrapolated.remainingMinutes()).isEqualTo(10);
+            assertThat(extrapolated.vehicleUnit()).isEqualTo("1552");
+            assertThat(extrapolated.driverId()).isEqualTo("PE,509");
+            assertThat(extrapolated.scheduleDeviation()).isEqualTo("+01:16");
+
+            // 30 minutes later -> EXPIRED, 0 min remaining
+            BusArrivalItemDTO expired = engine.extrapolateVehicle(unit, baseTimestamp.plus(Duration.ofMinutes(30)));
+            assertThat(expired.status()).isEqualTo(TelemetryStatus.EXPIRED);
+            assertThat(expired.remainingMinutes()).isEqualTo(0);
+        }
     }
 }

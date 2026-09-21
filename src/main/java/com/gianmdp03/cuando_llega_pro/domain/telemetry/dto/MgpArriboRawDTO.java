@@ -19,7 +19,9 @@ public record MgpArriboRawDTO(
         @JsonProperty("EsAdaptado") @JsonAlias({"esAdaptado", "adaptado"}) String esAdaptado,
         @JsonProperty("IdentificadorCoche") @JsonAlias({"identificadorCoche", "coche"}) String identificadorCoche,
         @JsonProperty("UltimaFechaHoraGPS") @JsonAlias({"ultimaFechaHoraGps", "fechaHoraGps", "timestamp"}) String ultimaFechaHoraGps,
-        @JsonProperty("CodigoLineaParada") @JsonAlias({"codigoLineaParada"}) String codigoLineaParada
+        @JsonProperty("CodigoLineaParada") @JsonAlias({"codigoLineaParada"}) String codigoLineaParada,
+        @JsonProperty("DesvioHorario") @JsonAlias({"desvioHorario", "desvio"}) String desvioHorario,
+        @JsonProperty("IdentificadorChofer") @JsonAlias({"identificadorChofer", "chofer"}) String identificadorChofer
 ) {
 
     public MgpArriboRaw toRaw() {
@@ -34,7 +36,14 @@ public record MgpArriboRawDTO(
                 esAdaptado,
                 identificadorCoche,
                 ultimaFechaHoraGps,
-                codigoLineaParada
+                codigoLineaParada,
+                null,
+                null,
+                desvioHorario,
+                identificadorChofer,
+                null,
+                null,
+                null
         );
     }
 
@@ -53,7 +62,9 @@ public record MgpArriboRawDTO(
                 raw.esAdaptado(),
                 raw.identificadorCoche(),
                 raw.ultimaFechaHoraGps(),
-                raw.codigoLineaParada()
+                raw.codigoLineaParada(),
+                raw.desvioHorario(),
+                raw.identificadorChofer()
         );
     }
 }

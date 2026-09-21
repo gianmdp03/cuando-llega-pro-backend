@@ -45,11 +45,6 @@ class SecurityConfigTest {
 
     @RestController
     static class DummySecurityController {
-        @GetMapping("/healthz")
-        public String health() {
-            return "OK";
-        }
-
         @GetMapping("/api/v1/auth/ping")
         public String authPing() {
             return "PONG";
