@@ -9,9 +9,9 @@ services:
     container_name: mgp-proxy
     restart: unless-stopped
     ports:
-      - "8080:8080"
+      - "8079:8079"
     environment:
-      PORT: "8080"
+      PORT: "8079"
       UPSTREAM_URL: "https://appsl.mardelplata.gob.ar/app_cuando_llega/webWS.php"
       TIMEOUT_SECONDS: "15"
       ALLOWED_ORIGIN: "http://spring-boot:8400"
@@ -89,6 +89,8 @@ services:
       dockerfile: Dockerfile
     container_name: cuando-llega-backend
     restart: unless-stopped
+    env_file:
+      - src/main/resources/secrets.properties
     ports:
       - "8400:8400"
     depends_on:
@@ -101,10 +103,8 @@ services:
       SPRING_THREADS_VIRTUAL_ENABLED: "true"
       SPRING_DATASOURCE_URL: "jdbc:postgresql://postgres:5432/cuando_llega_pro"
       SPRING_DATASOURCE_USERNAME: "postgres"
-      SPRING_DATASOURCE_PASSWORD: "postgres"
       SPRING_JPA_HIBERNATE_DDL_AUTO: "update"
-      MGP_PROXY_URL: "http://mgp-proxy:8080"
-      JWT_SECRET: "404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970"
+      MGP_PROXY_URL: "http://mgp-proxy:8079"
     deploy:
       resources:
         limits:

@@ -34,11 +34,15 @@ class TransitMapServiceTest {
     @Mock
     private StopLineDirectionRepository stopTransitLineRepository;
 
+    @Mock
+    private TransitLineResolver transitLineResolver;
+
     @InjectMocks
     private TransitService transitService;
 
     @Test
     void getDirections_returnsOneEntryPerBandera() {
+        when(transitLineResolver.toInternalCode("521")).thenReturn("100");
         when(lineRepository.existsById("100")).thenReturn(true);
         when(stopTransitLineRepository.findDistinctDirectionDtosByLineCode("100")).thenReturn(List.of(
                 new DirectionDto("AL BOSQUE", "AL BOSQUE"),
@@ -46,7 +50,7 @@ class TransitMapServiceTest {
                 new DirectionDto("A BERUTI", "A BERUTI")
         ));
 
-        assertThat(transitService.getDirections("100"))
+        assertThat(transitService.getDirections("521"))
                 .containsExactly(
                         new DirectionDto("AL BOSQUE", "AL BOSQUE"),
                         new DirectionDto("A BERUTI", "A BERUTI")
@@ -70,10 +74,20 @@ class TransitMapServiceTest {
 
     @Test
     void getStops_rejectsUnknownLine() {
+        when(transitLineResolver.toInternalCode("unknown")).thenReturn("unknown");
         when(lineRepository.existsById("unknown")).thenReturn(false);
 
         assertThatThrownBy(() -> transitService.getStops("unknown", "AL BOSQUE"))
                 .isInstanceOf(ResourceNotFoundException.class)
-                .hasMessage("Línea no encontrada: unknown");
+                .hasMessage("Line not found: unknown");
+    }
+
+    @Test
+    void getStops_resolvesCommercialLineCodeBeforeQueryingRepositories() {
+        when(transitLineResolver.toInternalCode("511")).thenReturn("98");
+        when(lineRepository.existsById("98")).thenReturn(true);
+        when(stopRepository.findByLineCodeAndDirection("98", "AL BOSQUE")).thenReturn(List.of());
+
+        assertThat(transitService.getStops("511", "AL BOSQUE")).isEmpty();
     }
 }

@@ -51,8 +51,9 @@ class ArrivalsServiceTest {
     private ArrivalsService arrivalsService;
 
     private static final String LINE_511 = "511";
+    private static final String INTERNAL_LINE_511 = "98";
     private static final String STOP_1024 = "1024";
-    private static final String CACHE_KEY = "1024:511";
+    private static final String CACHE_KEY = "1024:98";
 
     @BeforeEach
     void setUp() {
@@ -134,7 +135,7 @@ class ArrivalsServiceTest {
 
             when(cacheManager.getCache(CaffeineCacheConfig.ARRIVALS_CACHE)).thenReturn(cache);
             when(cache.get(CACHE_KEY)).thenReturn(null);
-            when(mgpProxyClient.getArrivals(any(), eq("RecuperarProximosArribosW"), eq(STOP_1024), eq(LINE_511)))
+            when(mgpProxyClient.getArrivals(any(), eq("RecuperarProximosArribosW"), eq(STOP_1024), eq(INTERNAL_LINE_511)))
                     .thenReturn(upstreamJson);
 
             ArrivalResponseDTO result = arrivalsService.getArrivals(LINE_511, STOP_1024);
@@ -184,7 +185,7 @@ class ArrivalsServiceTest {
 
             when(cacheManager.getCache(CaffeineCacheConfig.ARRIVALS_CACHE)).thenReturn(cache);
             when(cache.get(CACHE_KEY)).thenReturn(null);
-            when(mgpProxyClient.getArrivals(any(), eq("RecuperarProximosArribosW"), eq(STOP_1024), eq(LINE_511)))
+            when(mgpProxyClient.getArrivals(any(), eq("RecuperarProximosArribosW"), eq(STOP_1024), eq(INTERNAL_LINE_511)))
                     .thenReturn(upstreamJson);
 
             ArrivalResponseDTO result = arrivalsService.getArrivals(LINE_511, STOP_1024);
@@ -202,7 +203,7 @@ class ArrivalsServiceTest {
         void handlesEmptyUpstreamArrayCleanly() {
             when(cacheManager.getCache(CaffeineCacheConfig.ARRIVALS_CACHE)).thenReturn(cache);
             when(cache.get(CACHE_KEY)).thenReturn(null);
-            when(mgpProxyClient.getArrivals(any(), eq("RecuperarProximosArribosW"), eq(STOP_1024), eq(LINE_511)))
+            when(mgpProxyClient.getArrivals(any(), eq("RecuperarProximosArribosW"), eq(STOP_1024), eq(INTERNAL_LINE_511)))
                     .thenReturn("[]");
 
             ArrivalResponseDTO result = arrivalsService.getArrivals(LINE_511, STOP_1024);
@@ -243,7 +244,7 @@ class ArrivalsServiceTest {
 
             when(cacheManager.getCache(CaffeineCacheConfig.ARRIVALS_CACHE)).thenReturn(cache);
             when(cache.get(CACHE_KEY)).thenReturn(null);
-            when(mgpProxyClient.getArrivals(any(), eq("RecuperarProximosArribosW"), eq(STOP_1024), eq(LINE_511)))
+            when(mgpProxyClient.getArrivals(any(), eq("RecuperarProximosArribosW"), eq(STOP_1024), eq(INTERNAL_LINE_511)))
                     .thenReturn(pascalJson);
 
             ArrivalResponseDTO result = arrivalsService.getArrivals(LINE_511, STOP_1024);
@@ -260,9 +261,9 @@ class ArrivalsServiceTest {
             assertThat(item.vehicleUnit()).isEqualTo("104");
             assertThat(item.accessible()).isTrue();
 
-            // Verify unit is tracked in vehicleTrackingBuffer
+            // ETAs over 25 minutes remain visible while live but are not tracked for fallback recovery.
             assertThat(arrivalsService.getVehicleTrackingBuffer()).containsKey(CACHE_KEY);
-            assertThat(arrivalsService.getVehicleTrackingBuffer().get(CACHE_KEY)).containsKey("104");
+            assertThat(arrivalsService.getVehicleTrackingBuffer().get(CACHE_KEY)).doesNotContainKey("104");
         }
 
         @Test
@@ -277,12 +278,12 @@ class ArrivalsServiceTest {
                     """;
             when(cacheManager.getCache(CaffeineCacheConfig.ARRIVALS_CACHE)).thenReturn(cache);
             when(cache.get(CACHE_KEY)).thenReturn(null);
-            when(mgpProxyClient.getArrivals(any(), eq("RecuperarProximosArribosW"), eq(STOP_1024), eq(LINE_511)))
+            when(mgpProxyClient.getArrivals(any(), eq("RecuperarProximosArribosW"), eq(STOP_1024), eq(INTERNAL_LINE_511)))
                     .thenReturn(poll1Json);
 
             ArrivalResponseDTO poll1 = arrivalsService.getArrivals(LINE_511, STOP_1024);
             assertThat(poll1.arrivals()).hasSize(2);
-            assertThat(arrivalsService.getVehicleTrackingBuffer().get(CACHE_KEY)).containsKeys("1552", "1589");
+            assertThat(arrivalsService.getVehicleTrackingBuffer().get(CACHE_KEY)).containsOnlyKeys("1552");
 
             // Poll 2: Unit 1552 suffered GPS microcut and is missing from upstream
             String poll2Json = """
@@ -290,7 +291,7 @@ class ArrivalsServiceTest {
                       {"linea": "511", "bandera": "A", "arribo": "28 min", "minutos": 28, "coche": "1589"}
                     ]
                     """;
-            when(mgpProxyClient.getArrivals(any(), eq("RecuperarProximosArribosW"), eq(STOP_1024), eq(LINE_511)))
+            when(mgpProxyClient.getArrivals(any(), eq("RecuperarProximosArribosW"), eq(STOP_1024), eq(INTERNAL_LINE_511)))
                     .thenReturn(poll2Json);
 
             BusArrivalItemDTO unit1552 = poll1.arrivals().getFirst();
@@ -337,7 +338,7 @@ class ArrivalsServiceTest {
 
             when(cacheManager.getCache(CaffeineCacheConfig.ARRIVALS_CACHE)).thenReturn(cache);
             when(cache.get(CACHE_KEY)).thenReturn(null);
-            when(mgpProxyClient.getArrivals(any(), eq("RecuperarProximosArribosW"), eq(STOP_1024), eq(LINE_511)))
+            when(mgpProxyClient.getArrivals(any(), eq("RecuperarProximosArribosW"), eq(STOP_1024), eq(INTERNAL_LINE_511)))
                     .thenReturn(upstreamJson);
 
             ArrivalResponseDTO result = arrivalsService.getArrivals(LINE_511, STOP_1024, "a");
@@ -366,7 +367,7 @@ class ArrivalsServiceTest {
 
             when(cacheManager.getCache(CaffeineCacheConfig.ARRIVALS_CACHE)).thenReturn(cache);
             when(cache.get(CACHE_KEY)).thenReturn(null);
-            when(mgpProxyClient.getArrivals(any(), eq("RecuperarProximosArribosW"), eq(STOP_1024), eq(LINE_511)))
+            when(mgpProxyClient.getArrivals(any(), eq("RecuperarProximosArribosW"), eq(STOP_1024), eq(INTERNAL_LINE_511)))
                     .thenThrow(new RuntimeException("Connection timed out to Go proxy"));
 
             BusArrivalItemDTO extrapolatedItem = new BusArrivalItemDTO(LINE_511, "A", 10, 3000, "15 min", "001", true, TelemetryStatus.ESTIMATED_FALLBACK);
@@ -392,7 +393,7 @@ class ArrivalsServiceTest {
         void upstreamExceptionWithoutFallback_ThrowsUpstreamServiceException() {
             when(cacheManager.getCache(CaffeineCacheConfig.ARRIVALS_CACHE)).thenReturn(cache);
             when(cache.get(CACHE_KEY)).thenReturn(null);
-            when(mgpProxyClient.getArrivals(any(), eq("RecuperarProximosArribosW"), eq(STOP_1024), eq(LINE_511)))
+            when(mgpProxyClient.getArrivals(any(), eq("RecuperarProximosArribosW"), eq(STOP_1024), eq(INTERNAL_LINE_511)))
                     .thenThrow(new RuntimeException("502 Bad Gateway"));
 
             assertThatThrownBy(() -> arrivalsService.getArrivals(LINE_511, STOP_1024))
@@ -411,7 +412,7 @@ class ArrivalsServiceTest {
 
             when(cacheManager.getCache(CaffeineCacheConfig.ARRIVALS_CACHE)).thenReturn(cache);
             when(cache.get(CACHE_KEY)).thenReturn(null);
-            when(mgpProxyClient.getArrivals(any(), eq("RecuperarProximosArribosW"), eq(STOP_1024), eq(LINE_511)))
+            when(mgpProxyClient.getArrivals(any(), eq("RecuperarProximosArribosW"), eq(STOP_1024), eq(INTERNAL_LINE_511)))
                     .thenReturn("{this is not valid json");
 
             ArrivalResponseDTO fallbackResponse = new ArrivalResponseDTO(LINE_511, STOP_1024, "A", TelemetryStatus.ESTIMATED_FALLBACK,
@@ -432,7 +433,7 @@ class ArrivalsServiceTest {
         void emptyResponseWithoutFallback_ThrowsUpstreamServiceException() {
             when(cacheManager.getCache(CaffeineCacheConfig.ARRIVALS_CACHE)).thenReturn(cache);
             when(cache.get(CACHE_KEY)).thenReturn(null);
-            when(mgpProxyClient.getArrivals(any(), eq("RecuperarProximosArribosW"), eq(STOP_1024), eq(LINE_511)))
+            when(mgpProxyClient.getArrivals(any(), eq("RecuperarProximosArribosW"), eq(STOP_1024), eq(INTERNAL_LINE_511)))
                     .thenReturn("   ");
 
             assertThatThrownBy(() -> arrivalsService.getArrivals(LINE_511, STOP_1024))

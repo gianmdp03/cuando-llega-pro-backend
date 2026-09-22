@@ -25,6 +25,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Comparator;
 import java.util.UUID;
 
 @Service
@@ -113,9 +114,10 @@ public class TransitCatalogService {
             List<TransitStreetDTO> list = new ArrayList<>();
             if (array != null && array.isArray()) {
                 for (JsonNode n : array) {
-                    list.add(new TransitStreetDTO(n.path("Codigo").asText(), n.path("Descripcion").asText()));
+                    list.add(new TransitStreetDTO(n.path("Codigo").asText(), stripCitySuffix(n.path("Descripcion").asText())));
                 }
             }
+            list.sort(Comparator.comparing(TransitStreetDTO::descripcion));
             return list;
         });
     }
@@ -133,9 +135,10 @@ public class TransitCatalogService {
             List<TransitIntersectionDTO> list = new ArrayList<>();
             if (array != null && array.isArray()) {
                 for (JsonNode n : array) {
-                    list.add(new TransitIntersectionDTO(n.path("Codigo").asText(), n.path("Descripcion").asText()));
+                    list.add(new TransitIntersectionDTO(n.path("Codigo").asText(), stripCitySuffix(n.path("Descripcion").asText())));
                 }
             }
+            list.sort(Comparator.comparing(TransitIntersectionDTO::descripcion));
             return list;
         });
     }
@@ -385,4 +388,16 @@ public class TransitCatalogService {
             log.warn("No se pudo persistir en L2 Postgres: {}", ex.getMessage());
         }
     }
+
+    /**
+     * Removes the city suffix appended by the upstream API (e.g. " - MAR DEL PLATA",
+     * " - GENERAL PUEYRREDON") from street and intersection descriptions, returning
+     * only the street name itself.
+     */
+    private String stripCitySuffix(String descripcion) {
+        if (descripcion == null) return null;
+        int idx = descripcion.lastIndexOf(" - ");
+        return idx > 0 ? descripcion.substring(0, idx).trim() : descripcion.trim();
+    }
 }
+

@@ -2,6 +2,7 @@ package com.gianmdp03.cuando_llega_pro.domain.transit;
 
 import com.gianmdp03.cuando_llega_pro.domain.transit.dto.MapLineDto;
 import com.gianmdp03.cuando_llega_pro.domain.transit.dto.StopDetailDto;
+import com.gianmdp03.cuando_llega_pro.domain.transit.dto.StopArrivalsDto;
 import com.gianmdp03.cuando_llega_pro.domain.transit.dto.MapStopDto;
 import com.gianmdp03.cuando_llega_pro.domain.transit.dto.DirectionDto;
 import lombok.RequiredArgsConstructor;
@@ -25,6 +26,7 @@ import java.util.List;
 public class TransitController {
 
     private final TransitService transitService;
+    private final StopArrivalsService stopArrivalsService;
 
     @GetMapping("/lines")
     public ResponseEntity<List<MapLineDto>> getLines() {
@@ -47,5 +49,10 @@ public class TransitController {
     @GetMapping("/stops/{identifier}")
     public ResponseEntity<StopDetailDto> getStop(@PathVariable String identifier) {
         return ResponseEntity.ok(transitService.getStop(identifier));
+    }
+
+    @GetMapping("/stops/{identifier}/arrivals")
+    public ResponseEntity<StopArrivalsDto> getStopArrivals(@PathVariable String identifier) {
+        return ResponseEntity.ok(stopArrivalsService.getArrivals(identifier));
     }
 }

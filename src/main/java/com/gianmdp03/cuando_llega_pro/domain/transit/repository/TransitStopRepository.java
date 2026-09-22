@@ -13,12 +13,12 @@ import java.util.Optional;
 public interface TransitStopRepository extends JpaRepository<TransitStop, String> {
 
     @Query("""
-            select distinct stop
+            select stop
             from TransitStop stop
             join stop.directions stopTransitLine
             where stopTransitLine.line.code = :lineCode
               and stopTransitLine.direction = :direction
-            order by stop.description asc
+            order by stopTransitLine.stopOrder asc
             """)
     List<TransitStop> findByLineCodeAndDirection(
             @Param("lineCode") String lineCode,

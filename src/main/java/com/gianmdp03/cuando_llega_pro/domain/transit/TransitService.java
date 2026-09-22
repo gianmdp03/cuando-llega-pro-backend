@@ -30,6 +30,7 @@ public class TransitService {
     private final TransitLineRepository lineRepository;
     private final TransitStopRepository stopRepository;
     private final StopLineDirectionRepository stopLineDirectionRepository;
+    private final TransitLineResolver transitLineResolver;
 
     @Cacheable(cacheNames = CaffeineCacheConfig.TRANSIT_MAP_CACHE, key = "'lines'")
     public List<MapLineDto> getLines() {
@@ -38,19 +39,23 @@ public class TransitService {
                 .toList();
     }
 
-    @Cacheable(cacheNames = CaffeineCacheConfig.TRANSIT_MAP_CACHE, key = "'directions:' + #codeTransitLine")
-    public List<DirectionDto> getDirections(String codeTransitLine) {
-        requireLine(codeTransitLine);
+    @Cacheable(cacheNames = CaffeineCacheConfig.TRANSIT_MAP_CACHE,
+            key = "'directions:' + @transitLineResolver.toInternalCode(#lineCode)")
+    public List<DirectionDto> getDirections(String lineCode) {
+        String internalLineCode = resolveInternalLineCode(lineCode);
+        requireLine(internalLineCode);
         Map<String, DirectionDto> directions = new LinkedHashMap<>();
-        stopLineDirectionRepository.findDistinctDirectionDtosByLineCode(codeTransitLine)
+        stopLineDirectionRepository.findDistinctDirectionDtosByLineCode(internalLineCode)
                 .forEach(direction -> directions.putIfAbsent(direction.direction(), direction));
         return List.copyOf(directions.values());
     }
 
-    @Cacheable(cacheNames = CaffeineCacheConfig.TRANSIT_MAP_CACHE, key = "'stops:' + #codeTransitLine + ':' + #direction")
-    public List<MapStopDto> getStops(String codeTransitLine, String direction) {
-        requireLine(codeTransitLine);
-        return stopRepository.findByLineCodeAndDirection(codeTransitLine, direction).stream()
+    @Cacheable(cacheNames = CaffeineCacheConfig.TRANSIT_MAP_CACHE,
+            key = "'stops:' + @transitLineResolver.toInternalCode(#lineCode) + ':' + #direction")
+    public List<MapStopDto> getStops(String lineCode, String direction) {
+        String internalLineCode = resolveInternalLineCode(lineCode);
+        requireLine(internalLineCode);
+        return stopRepository.findByLineCodeAndDirection(internalLineCode, direction).stream()
                 .map(this::toMapStop)
                 .toList();
     }
@@ -69,9 +74,13 @@ public class TransitService {
         return new StopDetailDto(stop.getIdentifier(), stop.getLatitude(), stop.getLongitude(), directions);
     }
 
-    private void requireLine(String codeTransitLine) {
-        if (!lineRepository.existsById(codeTransitLine)) {
-            throw new ResourceNotFoundException("Line not found: " + codeTransitLine);
+    private String resolveInternalLineCode(String lineCode) {
+        return transitLineResolver.toInternalCode(lineCode);
+    }
+
+    private void requireLine(String internalLineCode) {
+        if (!lineRepository.existsById(internalLineCode)) {
+            throw new ResourceNotFoundException("Line not found: " + internalLineCode);
         }
     }
 

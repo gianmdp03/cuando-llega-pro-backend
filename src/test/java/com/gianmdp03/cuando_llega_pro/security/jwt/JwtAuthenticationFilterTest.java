@@ -1,5 +1,6 @@
 package com.gianmdp03.cuando_llega_pro.security.jwt;
 
+import com.gianmdp03.cuando_llega_pro.domain.user.UserRepository;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import org.junit.jupiter.api.AfterEach;
@@ -28,6 +29,9 @@ class JwtAuthenticationFilterTest {
     private JwtTokenProvider tokenProvider;
 
     @Mock
+    private UserRepository userRepository;
+
+    @Mock
     private FilterChain filterChain;
 
     private JwtAuthenticationFilter filter;
@@ -35,7 +39,7 @@ class JwtAuthenticationFilterTest {
     @BeforeEach
     void setUp() {
         SecurityContextHolder.clearContext();
-        filter = new JwtAuthenticationFilter(tokenProvider);
+        filter = new JwtAuthenticationFilter(tokenProvider, userRepository);
     }
 
     @AfterEach
@@ -44,7 +48,7 @@ class JwtAuthenticationFilterTest {
     }
 
     @Test
-    @DisplayName("Should authenticate request when valid Bearer token is provided with ROLE_ prefix")
+    @DisplayName("Should authenticate request when valid Bearer token is provided and user exists in DB")
     void doFilterInternalValidBearerTokenWithRolePrefix() throws ServletException, IOException {
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.addHeader("Authorization", "Bearer valid.jwt.token");
@@ -52,6 +56,7 @@ class JwtAuthenticationFilterTest {
 
         when(tokenProvider.validateToken("valid.jwt.token")).thenReturn(true);
         when(tokenProvider.getEmailFromToken("valid.jwt.token")).thenReturn("user@example.com");
+        when(userRepository.existsByEmail("user@example.com")).thenReturn(true);
         when(tokenProvider.getRoleFromToken("valid.jwt.token")).thenReturn("ROLE_ADMIN");
 
         filter.doFilterInternal(request, response, filterChain);
@@ -74,6 +79,7 @@ class JwtAuthenticationFilterTest {
 
         when(tokenProvider.validateToken("valid.jwt.token")).thenReturn(true);
         when(tokenProvider.getEmailFromToken("valid.jwt.token")).thenReturn("user@example.com");
+        when(userRepository.existsByEmail("user@example.com")).thenReturn(true);
         when(tokenProvider.getRoleFromToken("valid.jwt.token")).thenReturn("USER");
 
         filter.doFilterInternal(request, response, filterChain);
@@ -84,6 +90,23 @@ class JwtAuthenticationFilterTest {
         assertThat(auth.getAuthorities().stream().map(GrantedAuthority::getAuthority))
                 .contains("USER", "ROLE_USER");
 
+        verify(filterChain).doFilter(request, response);
+    }
+
+    @Test
+    @DisplayName("Should not authenticate when JWT is valid but user does not exist in DB")
+    void doFilterInternalUserDoesNotExistInDb() throws ServletException, IOException {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.addHeader("Authorization", "Bearer valid.jwt.token");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        when(tokenProvider.validateToken("valid.jwt.token")).thenReturn(true);
+        when(tokenProvider.getEmailFromToken("valid.jwt.token")).thenReturn("deleted@example.com");
+        when(userRepository.existsByEmail("deleted@example.com")).thenReturn(false);
+
+        filter.doFilterInternal(request, response, filterChain);
+
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
         verify(filterChain).doFilter(request, response);
     }
 

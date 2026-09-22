@@ -10,6 +10,8 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.ToString;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.Instant;
 
@@ -33,9 +35,11 @@ public class TransitCatalogEntity {
     @Column(name = "catalog_type", nullable = false, length = 50)
     private String catalogType;
 
-    @Column(name = "payload", columnDefinition = "TEXT", nullable = false)
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "payload", columnDefinition = "jsonb", nullable = false)
     private String payload;
 
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 }
+

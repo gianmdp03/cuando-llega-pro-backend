@@ -44,6 +44,7 @@ public class ArrivalsService {
 
     private static final Logger log = LoggerFactory.getLogger(ArrivalsService.class);
     private static final String UPSTREAM_ACTION = "RecuperarProximosArribosW";
+    private static final int MAXIMUM_TRACKED_ETA_MINUTES = 25;
 
     private final MgpProxyClient mgpProxyClient;
     private final ObjectMapper objectMapper;
@@ -53,6 +54,7 @@ public class ArrivalsService {
     private final TransitLineResolver transitLineResolver;
     private final StopLocationRepository stopLocationRepository;
     private final CircuitBreaker circuitBreaker;
+    private final MgpRequestPacer mgpRequestPacer;
 
     /**
      * Fallback in-memory store retaining the last confirmed telemetry snapshot per stop and line.
@@ -76,7 +78,7 @@ public class ArrivalsService {
             ExtrapolationEngine extrapolationEngine,
             CacheManager cacheManager
     ) {
-        this(mgpProxyClient, objectMapper, extrapolationEngine, cacheManager, new TelemetryMapper(objectMapper), new TransitLineResolver(), null, null);
+        this(mgpProxyClient, objectMapper, extrapolationEngine, cacheManager, new TelemetryMapper(objectMapper), new TransitLineResolver(), null, null, new MgpRequestPacer(0));
     }
 
     public ArrivalsService(
@@ -87,7 +89,7 @@ public class ArrivalsService {
             TelemetryMapper telemetryMapper,
             TransitLineResolver transitLineResolver
     ) {
-        this(mgpProxyClient, objectMapper, extrapolationEngine, cacheManager, telemetryMapper, transitLineResolver, null, null);
+        this(mgpProxyClient, objectMapper, extrapolationEngine, cacheManager, telemetryMapper, transitLineResolver, null, null, new MgpRequestPacer(0));
     }
 
     public ArrivalsService(
@@ -99,7 +101,7 @@ public class ArrivalsService {
             TransitLineResolver transitLineResolver,
             StopLocationRepository stopLocationRepository
     ) {
-        this(mgpProxyClient, objectMapper, extrapolationEngine, cacheManager, telemetryMapper, transitLineResolver, stopLocationRepository, null);
+        this(mgpProxyClient, objectMapper, extrapolationEngine, cacheManager, telemetryMapper, transitLineResolver, stopLocationRepository, null, new MgpRequestPacer(0));
     }
 
     @Autowired
@@ -111,7 +113,8 @@ public class ArrivalsService {
             TelemetryMapper telemetryMapper,
             TransitLineResolver transitLineResolver,
             @Autowired(required = false) StopLocationRepository stopLocationRepository,
-            @Autowired(required = false) CircuitBreaker circuitBreaker
+            @Autowired(required = false) CircuitBreaker circuitBreaker,
+            MgpRequestPacer mgpRequestPacer
     ) {
         this.mgpProxyClient = mgpProxyClient;
         this.objectMapper = objectMapper;
@@ -121,6 +124,7 @@ public class ArrivalsService {
         this.transitLineResolver = transitLineResolver != null ? transitLineResolver : new TransitLineResolver();
         this.stopLocationRepository = stopLocationRepository;
         this.circuitBreaker = circuitBreaker != null ? circuitBreaker : CircuitBreaker.ofDefaults("mgpUpstream");
+        this.mgpRequestPacer = mgpRequestPacer;
     }
 
     /**
@@ -176,7 +180,7 @@ public class ArrivalsService {
             Cache.ValueWrapper wrapper = fallbackCache.get(cacheKey);
             if (wrapper != null && wrapper.get() instanceof ArrivalResponseDTO cachedFallback) {
                 log.debug("Caffeine fallback cache hit for key: {}", cacheKey);
-                return extrapolationEngine.extrapolate(cachedFallback, Instant.now());
+                return extrapolationEngine.extrapolate(trackableArrivals(cachedFallback), Instant.now());
             }
         }
 
@@ -220,10 +224,10 @@ public class ArrivalsService {
             log.debug("Fetching live telemetry: stopId={}, lineCode={}, internalCode={}, reqId={}",
                     stopId, lineCode, internalLineCode, requestId);
 
-            // Llamada protegida por el Circuit Breaker
-            String rawJson = circuitBreaker.executeSupplier(() ->
-                    mgpProxyClient.getArrivals(requestId, UPSTREAM_ACTION, stopId.trim(), internalLineCode)
-            );
+            // The circuit breaker avoids upstream calls while open; the pacer spaces calls that do go upstream.
+            String rawJson = circuitBreaker.executeSupplier(() -> mgpRequestPacer.execute(
+                    () -> mgpProxyClient.getArrivals(requestId, UPSTREAM_ACTION, stopId.trim(), internalLineCode)
+            ));
 
             if (rawJson == null || rawJson.isBlank()) {
                 throw new UpstreamServiceException("Empty response payload received from upstream proxy for stop: "
@@ -246,7 +250,7 @@ public class ArrivalsService {
                 String unitId = liveItem.vehicleUnit();
                 BusArrivalItemDTO processedItem = liveItem;
 
-                if (unitId != null && !unitId.isBlank()) {
+                if (unitId != null && !unitId.isBlank() && isEligibleForTracking(liveItem)) {
                     String cleanUnitId = unitId.trim();
                     activeUnitsInPoll.add(cleanUnitId);
 
@@ -281,6 +285,8 @@ public class ArrivalsService {
 
                     processedItem = liveItem.withBearingAndSpeed(bearing, speedKmH);
                     trackedUnits.put(cleanUnitId, processedItem);
+                } else if (unitId != null && !unitId.isBlank()) {
+                    trackedUnits.remove(unitId.trim());
                 }
 
                 consolidatedItems.add(processedItem);
@@ -395,7 +401,7 @@ public class ArrivalsService {
         ArrivalResponseDTO lastKnown = lastKnownTelemetryStore.get(cacheKey);
         if (lastKnown != null) {
             log.info("Degrading to extrapolated fallback telemetry for key: {}", cacheKey);
-            ArrivalResponseDTO degraded = extrapolationEngine.extrapolate(lastKnown, Instant.now());
+            ArrivalResponseDTO degraded = extrapolationEngine.extrapolate(trackableArrivals(lastKnown), Instant.now());
 
             if (fallbackCache != null) {
                 fallbackCache.put(cacheKey, lastKnown);
@@ -407,6 +413,26 @@ public class ArrivalsService {
         throw new UpstreamServiceException(
                 "Upstream proxy failed and no cached telemetry exists for stop: " + stopId + ", line: " + lineCode,
                 ex
+        );
+    }
+
+    private boolean isEligibleForTracking(BusArrivalItemDTO arrival) {
+        return arrival.remainingMinutes() != null
+                && arrival.remainingMinutes() >= 0
+                && arrival.remainingMinutes() <= MAXIMUM_TRACKED_ETA_MINUTES;
+    }
+
+    private ArrivalResponseDTO trackableArrivals(ArrivalResponseDTO telemetry) {
+        return new ArrivalResponseDTO(
+                telemetry.lineCode(),
+                telemetry.stopId(),
+                telemetry.branch(),
+                telemetry.status(),
+                telemetry.timestamp(),
+                telemetry.deltaMinutes(),
+                telemetry.arrivals().stream().filter(this::isEligibleForTracking).toList(),
+                telemetry.stopLatitude(),
+                telemetry.stopLongitude()
         );
     }
 

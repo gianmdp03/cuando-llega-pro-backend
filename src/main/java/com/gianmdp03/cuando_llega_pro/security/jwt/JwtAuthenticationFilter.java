@@ -1,5 +1,6 @@
 package com.gianmdp03.cuando_llega_pro.security.jwt;
 
+import com.gianmdp03.cuando_llega_pro.domain.user.UserRepository;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -21,7 +22,8 @@ import java.util.List;
 
 /**
  * Filter that intercepts incoming HTTP requests, extracts JWT bearer tokens,
- * validates them, and populates the Spring Security context with the authenticated principal.
+ * validates them against token signature and database existence, and populates
+ * the Spring Security context with the authenticated principal.
  */
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
@@ -30,9 +32,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private static final String BEARER_PREFIX = "Bearer ";
 
     private final JwtTokenProvider tokenProvider;
+    private final UserRepository userRepository;
 
-    public JwtAuthenticationFilter(JwtTokenProvider tokenProvider) {
+    public JwtAuthenticationFilter(JwtTokenProvider tokenProvider, UserRepository userRepository) {
         this.tokenProvider = tokenProvider;
+        this.userRepository = userRepository;
     }
 
     @Override
@@ -46,27 +50,32 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
             if (StringUtils.hasText(jwt) && tokenProvider.validateToken(jwt)) {
                 String email = tokenProvider.getEmailFromToken(jwt);
-                String role = tokenProvider.getRoleFromToken(jwt);
 
-                List<SimpleGrantedAuthority> authorities;
-                if (StringUtils.hasText(role)) {
-                    if (role.startsWith("ROLE_")) {
-                        authorities = List.of(new SimpleGrantedAuthority(role));
+                if (StringUtils.hasText(email) && userRepository.existsByEmail(email)) {
+                    String role = tokenProvider.getRoleFromToken(jwt);
+
+                    List<SimpleGrantedAuthority> authorities;
+                    if (StringUtils.hasText(role)) {
+                        if (role.startsWith("ROLE_")) {
+                            authorities = List.of(new SimpleGrantedAuthority(role));
+                        } else {
+                            authorities = List.of(
+                                    new SimpleGrantedAuthority(role),
+                                    new SimpleGrantedAuthority("ROLE_" + role)
+                            );
+                        }
                     } else {
-                        authorities = List.of(
-                                new SimpleGrantedAuthority(role),
-                                new SimpleGrantedAuthority("ROLE_" + role)
-                        );
+                        authorities = List.of();
                     }
+
+                    UsernamePasswordAuthenticationToken authentication =
+                            new UsernamePasswordAuthenticationToken(email, null, authorities);
+                    authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+
+                    SecurityContextHolder.getContext().setAuthentication(authentication);
                 } else {
-                    authorities = List.of();
+                    log.warn("JWT token valid but user with email '{}' does not exist in database", email);
                 }
-
-                UsernamePasswordAuthenticationToken authentication =
-                        new UsernamePasswordAuthenticationToken(email, null, authorities);
-                authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
-
-                SecurityContextHolder.getContext().setAuthentication(authentication);
             }
         } catch (Exception ex) {
             log.error("Failed to establish security context from JWT: {}", ex.getMessage(), ex);

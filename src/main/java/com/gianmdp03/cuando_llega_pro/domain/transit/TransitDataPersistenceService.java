@@ -20,18 +20,20 @@ public class TransitDataPersistenceService {
 
     @Transactional
     public void replaceEmptyCatalog(JsonNode dataset, int batchSize) {
-        JsonNode lines = dataset.path("lines");
+        JsonNode lines = dataset.has("lineas") ? dataset.path("lineas") : dataset.path("lines");
         if (!lines.isArray()) {
-            throw new IllegalArgumentException("Dataset does not contain the lines array");
+            throw new IllegalArgumentException("Dataset does not contain the lines/lineas array");
         }
         for (JsonNode lineNode : lines) {
-            upsertTransitLine(lineNode.path("lineCode").asText(), lineNode.path("name").asText());
+            String code = firstText(lineNode, "codigoLinea", "lineCode");
+            String name = firstText(lineNode, "nombre", "name");
+            upsertTransitLine(code, name);
         }
         entityManager.flush();
 
-        JsonNode stops = dataset.path("stops");
+        JsonNode stops = dataset.has("paradas") ? dataset.path("paradas") : dataset.path("stops");
         if (!stops.isArray()) {
-            throw new IllegalArgumentException("El dataset no contiene el arreglo stops");
+            throw new IllegalArgumentException("El dataset no contiene el arreglo stops/paradas");
         }
         int processed = 0;
         for (JsonNode stopNode : stops) {
@@ -51,6 +53,7 @@ public class TransitDataPersistenceService {
         if (!stops.isArray()) {
             return;
         }
+        int sequenceIndex = 0;
         for (JsonNode stopNode : stops) {
             String identifier = firstText(stopNode, "Identificador", "identifier", "Codigo", "code");
             if (identifier == null) {
@@ -72,15 +75,22 @@ public class TransitDataPersistenceService {
             }
 
             String direction = firstText(stopNode, "AbreviaturaBandera", "direction");
-            if (direction != null && stopTransitLineRepository
-                    .findByStopIdentifierAndLineCodeAndDirection(identifier, line.getCode(), direction)
-                    .isEmpty()) {
-                stop.addTransitLine(new StopLineDirection(
-                        entityManager.getReference(TransitLine.class, line.getCode()),
-                        direction,
-                        firstText(stopNode, "AbreviaturaAmpliadaBandera", "expandedDirection")
-                ));
+            if (direction != null) {
+                var existing = stopTransitLineRepository
+                        .findByStopIdentifierAndLineCodeAndDirection(identifier, line.getCode(), direction);
+                if (existing.isEmpty()) {
+                    stop.addTransitLine(new StopLineDirection(
+                            entityManager.getReference(TransitLine.class, line.getCode()),
+                            direction,
+                            firstText(stopNode, "AbreviaturaAmpliadaBandera", "expandedDirection"),
+                            sequenceIndex
+                    ));
+                } else {
+                    // Update the route sequence order for existing records so the map renders correctly.
+                    existing.get().setStopOrder(sequenceIndex);
+                }
             }
+            sequenceIndex++;
         }
     }
 
@@ -93,12 +103,14 @@ public class TransitDataPersistenceService {
                 doubleOrNull(stopNode, "latitude"),
                 doubleOrNull(stopNode, "longitude")
         );
+        int lineSequenceIndex = 0;
         for (JsonNode lineNode : stopNode.path("lines")) {
             String lineCode = requiredText(lineNode, "lineCode");
             stop.addTransitLine(new StopLineDirection(
                     entityManager.getReference(TransitLine.class, lineCode),
                     requiredText(lineNode, "direction"),
-                    textOrNull(lineNode, "expandedDirection")
+                    textOrNull(lineNode, "expandedDirection"),
+                    intOrDefault(lineNode, "stopOrder", lineSequenceIndex++)
             ));
         }
         entityManager.persist(stop);
@@ -146,6 +158,11 @@ public class TransitDataPersistenceService {
     private static String textOrNull(JsonNode node, String field) {
         JsonNode value = node.get(field);
         return value == null || value.isNull() || value.asText().isBlank() ? null : value.asText();
+    }
+
+    private static int intOrDefault(JsonNode node, String field, int defaultValue) {
+        JsonNode value = node.get(field);
+        return value == null || value.isNull() ? defaultValue : value.asInt(defaultValue);
     }
 
     private static Double firstDouble(JsonNode node, String... fields) {

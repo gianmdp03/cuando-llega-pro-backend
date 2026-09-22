@@ -54,9 +54,20 @@ public class StopLineDirection {
     @Column(name = "expanded_direction", length = 500)
     private String expandedDirection;
 
+    /** Zero-based position of this stop in the route sequence for the given line and direction. */
+    @Column(name = "stop_order", nullable = false)
+    private int stopOrder;
+
     public StopLineDirection(TransitLine line, String direction, String expandedDirection) {
         this.line = line;
         this.direction = direction;
         this.expandedDirection = expandedDirection;
+    }
+
+    public StopLineDirection(TransitLine line, String direction, String expandedDirection, int stopOrder) {
+        this.line = line;
+        this.direction = direction;
+        this.expandedDirection = expandedDirection;
+        this.stopOrder = stopOrder;
     }
 }
