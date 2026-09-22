@@ -18,12 +18,12 @@ public class ResilienceConfig {
         CircuitBreakerConfig config = CircuitBreakerConfig.custom()
                 .failureRateThreshold(50.0f)
                 .slowCallRateThreshold(50.0f)
-                .slowCallDurationThreshold(Duration.ofSeconds(10))
+                .slowCallDurationThreshold(Duration.ofSeconds(45))
                 .slidingWindowType(CircuitBreakerConfig.SlidingWindowType.COUNT_BASED)
                 .slidingWindowSize(10)
-                .minimumNumberOfCalls(5)
-                .waitDurationInOpenState(Duration.ofSeconds(15))
-                .permittedNumberOfCallsInHalfOpenState(3)
+                .minimumNumberOfCalls(3)
+                .waitDurationInOpenState(Duration.ofSeconds(30))
+                .permittedNumberOfCallsInHalfOpenState(2)
                 .automaticTransitionFromOpenToHalfOpenEnabled(true)
                 .build();
 
@@ -35,3 +35,4 @@ public class ResilienceConfig {
         return registry.circuitBreaker(MGP_CIRCUIT_BREAKER);
     }
 }
+
