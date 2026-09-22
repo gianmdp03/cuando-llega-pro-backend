@@ -17,5 +17,10 @@ public enum TelemetryStatus {
     /**
      * Expired telemetry where real-time signal has been lost for more than 25 minutes.
      */
-    EXPIRED
+    EXPIRED,
+
+    /**
+     * The upstream could not provide telemetry and no usable fallback existed.
+     */
+    UNAVAILABLE
 }

@@ -46,6 +46,12 @@ public class TransitRoute {
         this.description = description;
     }
 
+    public void updateMetadata(TransitLine line, String branch, String description) {
+        this.line = line;
+        this.branch = branch;
+        this.description = description;
+    }
+
     public void replacePoints(List<TransitRoutePoint> replacement) {
         points.clear();
         replacement.forEach(this::addPoint);

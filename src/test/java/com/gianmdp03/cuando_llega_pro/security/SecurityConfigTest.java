@@ -1,11 +1,14 @@
 package com.gianmdp03.cuando_llega_pro.security;
 
 import com.gianmdp03.cuando_llega_pro.security.jwt.JwtTokenProvider;
+import com.gianmdp03.cuando_llega_pro.domain.user.User;
+import com.gianmdp03.cuando_llega_pro.domain.user.UserRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.http.MediaType;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -24,6 +27,9 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.mockito.Mockito.when;
+
+import java.util.Optional;
 
 import org.springframework.context.annotation.Import;
 
@@ -42,6 +48,9 @@ class SecurityConfigTest {
 
     @Autowired
     private WebApplicationContext context;
+
+    @MockitoBean
+    private UserRepository userRepository;
 
     @RestController
     static class DummySecurityController {
@@ -123,6 +132,8 @@ class SecurityConfigTest {
                 .build();
 
         String token = tokenProvider.generateToken("test@example.com", 1L, "ROLE_USER");
+        when(userRepository.findByEmail("test@example.com"))
+                .thenReturn(Optional.of(new User("test@example.com", "password", "Test", "ROLE_USER")));
 
         mockMvc.perform(get("/api/v1/protected-data")
                         .header("Authorization", "Bearer " + token))

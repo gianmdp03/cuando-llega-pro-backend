@@ -1,5 +1,6 @@
 package com.gianmdp03.cuando_llega_pro.security.jwt;
 
+import com.gianmdp03.cuando_llega_pro.domain.user.User;
 import com.gianmdp03.cuando_llega_pro.domain.user.UserRepository;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -51,8 +52,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             if (StringUtils.hasText(jwt) && tokenProvider.validateToken(jwt)) {
                 String email = tokenProvider.getEmailFromToken(jwt);
 
-                if (StringUtils.hasText(email) && userRepository.existsByEmail(email)) {
-                    String role = tokenProvider.getRoleFromToken(jwt);
+                User user = StringUtils.hasText(email)
+                        ? userRepository.findByEmail(email).orElse(null)
+                        : null;
+                if (user != null) {
+                    String role = user.getRole();
 
                     List<SimpleGrantedAuthority> authorities;
                     if (StringUtils.hasText(role)) {

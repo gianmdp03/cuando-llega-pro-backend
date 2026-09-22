@@ -10,6 +10,7 @@ import com.gianmdp03.cuando_llega_pro.domain.telemetry.service.ArrivalsService;
 import com.gianmdp03.cuando_llega_pro.domain.user.User;
 import com.gianmdp03.cuando_llega_pro.domain.user.UserRepository;
 import com.gianmdp03.cuando_llega_pro.exception.UpstreamServiceException;
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -90,8 +91,9 @@ class TelemetryFallbackIntegrationTest {
 
     private static final String COMMUTER_EMAIL = "commuter@example.com";
     private static final String LINE_511 = "511";
+    private static final String INTERNAL_LINE_511 = "98";
     private static final String STOP_100 = "100";
-    private static final String CACHE_KEY = STOP_100 + ":" + LINE_511;
+    private static final String CACHE_KEY = STOP_100 + ":" + INTERNAL_LINE_511;
 
     @Autowired
     private MockMvc mockMvc;
@@ -101,6 +103,9 @@ class TelemetryFallbackIntegrationTest {
 
     @Autowired
     private ArrivalsService arrivalsService;
+
+    @Autowired
+    private CircuitBreaker circuitBreaker;
 
     @MockitoBean
     private MgpProxyClient mgpProxyClient;
@@ -118,7 +123,12 @@ class TelemetryFallbackIntegrationTest {
         if (arrivalsCache != null) {
             arrivalsCache.clear();
         }
+        Cache fallbackCache = cacheManager.getCache(CaffeineCacheConfig.FALLBACK_ARRIVALS_CACHE);
+        if (fallbackCache != null) {
+            fallbackCache.clear();
+        }
         arrivalsService.getLastKnownTelemetryStore().clear();
+        circuitBreaker.reset();
 
         // Setup commuter user entity
         User commuter = new User(COMMUTER_EMAIL, "hashedPassword", "Commuter User");
@@ -149,7 +159,7 @@ class TelemetryFallbackIntegrationTest {
                 [{"linea":"511","bandera":"A","minutos":15,"distancia":3200,"arribo":"10:15","coche":"42","adaptado":true}]
                 """;
 
-        when(mgpProxyClient.getArrivals(any(), eq("RecuperarProximosArribosW"), eq(STOP_100), eq(LINE_511)))
+        when(mgpProxyClient.getArrivals(any(), eq("RecuperarProximosArribosW"), eq(STOP_100), eq(INTERNAL_LINE_511)))
                 .thenReturn(upstreamSuccessJson);
 
         // Make initial request as commuter@example.com
@@ -177,7 +187,7 @@ class TelemetryFallbackIntegrationTest {
         Objects.requireNonNull(cacheManager.getCache(CaffeineCacheConfig.ARRIVALS_CACHE)).clear();
 
         // --- STEP 3: Upstream proxy failure simulation ---
-        when(mgpProxyClient.getArrivals(any(), eq("RecuperarProximosArribosW"), eq(STOP_100), eq(LINE_511)))
+        when(mgpProxyClient.getArrivals(any(), eq("RecuperarProximosArribosW"), eq(STOP_100), eq(INTERNAL_LINE_511)))
                 .thenThrow(new RuntimeException("Upstream timeout 504 Gateway Timeout"));
 
         // Simulate 5 minutes elapsed on the cached snapshot
@@ -225,7 +235,7 @@ class TelemetryFallbackIntegrationTest {
                 [{"linea":"511","bandera":"A","minutos":15,"distancia":3200,"arribo":"10:15","coche":"42","adaptado":true}]
                 """;
 
-        when(mgpProxyClient.getArrivals(any(), eq("RecuperarProximosArribosW"), eq(STOP_100), eq(LINE_511)))
+        when(mgpProxyClient.getArrivals(any(), eq("RecuperarProximosArribosW"), eq(STOP_100), eq(INTERNAL_LINE_511)))
                 .thenReturn(upstreamSuccessJson);
 
         mockMvc.perform(get("/api/v1/me/dashboard")
@@ -238,7 +248,7 @@ class TelemetryFallbackIntegrationTest {
         Objects.requireNonNull(cacheManager.getCache(CaffeineCacheConfig.ARRIVALS_CACHE)).clear();
 
         // Simulate upstream failure via UpstreamServiceException
-        when(mgpProxyClient.getArrivals(any(), eq("RecuperarProximosArribosW"), eq(STOP_100), eq(LINE_511)))
+        when(mgpProxyClient.getArrivals(any(), eq("RecuperarProximosArribosW"), eq(STOP_100), eq(INTERNAL_LINE_511)))
                 .thenThrow(new UpstreamServiceException("Upstream timeout 504 Gateway Timeout"));
 
         // Simulate 30 minutes elapsed (exceeding the 25-minute threshold)

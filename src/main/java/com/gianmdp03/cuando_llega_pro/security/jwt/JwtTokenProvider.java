@@ -16,7 +16,6 @@ import org.springframework.stereotype.Component;
 
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
 import java.util.Date;
 
 /**
@@ -63,7 +62,7 @@ public class JwtTokenProvider {
         }
 
         if (keyBytes.length < 32) {
-            keyBytes = Arrays.copyOf(keyBytes, 32);
+            throw new IllegalArgumentException("JWT secret must contain at least 32 bytes of entropy");
         }
 
         return Keys.hmacShaKeyFor(keyBytes);

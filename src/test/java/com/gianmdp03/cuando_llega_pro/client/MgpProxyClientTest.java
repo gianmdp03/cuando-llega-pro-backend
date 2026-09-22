@@ -1,5 +1,6 @@
 package com.gianmdp03.cuando_llega_pro.client;
 
+import com.gianmdp03.cuando_llega_pro.domain.telemetry.service.MgpRequestPacer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -26,7 +27,8 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 class MgpProxyClientTest {
 
     private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
-            .withUserConfiguration(MgpClientConfig.class);
+            .withUserConfiguration(MgpClientConfig.class)
+            .withBean(MgpRequestPacer.class, () -> new MgpRequestPacer(0, 1));
 
     private RestClient.Builder restClientBuilder;
     private MockRestServiceServer mockServer;

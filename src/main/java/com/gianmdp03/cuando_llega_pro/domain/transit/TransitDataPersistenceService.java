@@ -1,6 +1,7 @@
 package com.gianmdp03.cuando_llega_pro.domain.transit;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.gianmdp03.cuando_llega_pro.domain.preset.PresetRepository;
 import com.gianmdp03.cuando_llega_pro.domain.transit.model.TransitLine;
 import com.gianmdp03.cuando_llega_pro.domain.transit.model.TransitStop;
 import com.gianmdp03.cuando_llega_pro.domain.transit.model.StopLineDirection;
@@ -12,6 +13,10 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
+
 /** Owns transactional writes to the normalized static transit catalogue. */
 @Service
 @RequiredArgsConstructor
@@ -19,13 +24,24 @@ public class TransitDataPersistenceService {
 
     private final EntityManager entityManager;
     private final StopLineDirectionRepository stopTransitLineRepository;
+    private final PresetRepository presetRepository;
 
+    /**
+     * Replaces the whole published catalogue as one database transaction. A malformed
+     * dataset or a persistence error rolls the complete replacement back.
+     */
     @Transactional
-    public void replaceEmptyCatalog(JsonNode dataset, int batchSize) {
+    public void replaceCatalogSnapshot(JsonNode dataset, int batchSize) {
         JsonNode lines = dataset.has("lineas") ? dataset.path("lineas") : dataset.path("lines");
         if (!lines.isArray()) {
             throw new IllegalArgumentException("Dataset does not contain the lines/lineas array");
         }
+        JsonNode stops = dataset.has("paradas") ? dataset.path("paradas") : dataset.path("stops");
+        if (!stops.isArray()) {
+            throw new IllegalArgumentException("El dataset no contiene el arreglo stops/paradas");
+        }
+
+        clearCatalogueSnapshot();
         for (JsonNode lineNode : lines) {
             String code = firstText(lineNode, "codigoLinea", "lineCode");
             String name = firstText(lineNode, "nombre", "name");
@@ -35,10 +51,6 @@ public class TransitDataPersistenceService {
         persistRoutes(dataset);
         entityManager.flush();
 
-        JsonNode stops = dataset.has("paradas") ? dataset.path("paradas") : dataset.path("stops");
-        if (!stops.isArray()) {
-            throw new IllegalArgumentException("El dataset no contiene el arreglo stops/paradas");
-        }
         int processed = 0;
         for (JsonNode stopNode : stops) {
             persistTransitStop(stopNode);
@@ -48,13 +60,16 @@ public class TransitDataPersistenceService {
             }
         }
         entityManager.flush();
+        removeInvalidPresets(dataset);
     }
 
-    /** Imports MGP's ordered road geometry; it is independent from unordered physical stops. */
+    /**
+     * A catalogue is a snapshot, so it must replace deleted records as well as changed
+     * ones; otherwise obsolete stops would keep appearing on the map.
+     */
     @Transactional
-    public void replaceRoutes(JsonNode dataset) {
-        persistRoutes(dataset);
-        entityManager.flush();
+    public void upsertCatalog(JsonNode dataset, int batchSize) {
+        replaceCatalogSnapshot(dataset, batchSize);
     }
 
     private void persistRoutes(JsonNode dataset) {
@@ -67,10 +82,12 @@ public class TransitDataPersistenceService {
             String lineCode = requiredText(routeNode, "lineCode");
             String branch = requiredText(routeNode, "branch");
             TransitRoute route = entityManager.find(TransitRoute.class, id);
+            TransitLine line = entityManager.getReference(TransitLine.class, lineCode);
             if (route == null) {
-                route = new TransitRoute(id, entityManager.getReference(TransitLine.class, lineCode), branch,
-                        textOrNull(routeNode, "description"));
+                route = new TransitRoute(id, line, branch, textOrNull(routeNode, "description"));
                 entityManager.persist(route);
+            } else {
+                route.updateMetadata(line, branch, textOrNull(routeNode, "description"));
             }
             java.util.List<TransitRoutePoint> points = new java.util.ArrayList<>();
             int sequence = 0;
@@ -86,74 +103,101 @@ public class TransitDataPersistenceService {
         }
     }
 
-    @Transactional
-    public void synchronizeLineStops(TransitLine line, JsonNode response) {
-        // MGP's upstream response is intentionally parsed with its original Spanish field name.
-        JsonNode stops = response.has("paradas") ? response.path("paradas") : response;
-        if (!stops.isArray()) {
-            return;
+    private void clearCatalogueSnapshot() {
+        // Children first: the FK graph intentionally prevents deleting the catalogue
+        // in the wrong order.
+        entityManager.createQuery("delete from TransitRoutePoint").executeUpdate();
+        entityManager.createQuery("delete from TransitRoute").executeUpdate();
+        entityManager.createQuery("delete from StopLineDirection").executeUpdate();
+        entityManager.createQuery("delete from TransitStop").executeUpdate();
+        entityManager.createQuery("delete from TransitLine").executeUpdate();
+        entityManager.clear();
+    }
+
+    private void removeInvalidPresets(JsonNode dataset) {
+        Map<String, String> commercialToInternal = new java.util.HashMap<>();
+        JsonNode lines = dataset.has("lineas") ? dataset.path("lineas") : dataset.path("lines");
+        for (JsonNode line : lines) {
+            String commercial = firstText(line, "nombre", "name");
+            String internal = firstText(line, "codigoLinea", "lineCode");
+            if (commercial != null && internal != null) {
+                commercialToInternal.put(normalize(commercial), internal);
+            }
         }
-        int sequenceIndex = 0;
-        for (JsonNode stopNode : stops) {
-            String identifier = firstText(stopNode, "Identificador", "identifier", "Codigo", "code");
-            if (identifier == null) {
-                continue;
-            }
 
-            TransitStop stop = entityManager.find(TransitStop.class, identifier);
-            if (stop == null) {
-                stop = new TransitStop(
-                        identifier,
-                        firstText(stopNode, "Codigo", "code"),
-                        firstText(stopNode, "Descripcion", "description"),
-                        firstDouble(stopNode, "LatitudParada", "latitude", "Latitud"),
-                        firstDouble(stopNode, "LongitudParada", "longitude", "Longitud")
-                );
-                entityManager.persist(stop);
-            } else {
-                updateTransitStop(stop, stopNode);
+        Set<StopLine> validStopLines = new java.util.HashSet<>();
+        Set<PresetTarget> validTargets = new java.util.HashSet<>();
+        JsonNode stops = dataset.has("paradas") ? dataset.path("paradas") : dataset.path("stops");
+        for (JsonNode stop : stops) {
+            String identifier = textOrNull(stop, "identifier");
+            if (identifier == null) continue;
+            for (JsonNode line : stop.path("lines")) {
+                String lineCode = textOrNull(line, "lineCode");
+                String direction = textOrNull(line, "direction");
+                if (lineCode == null || direction == null) continue;
+                validStopLines.add(new StopLine(identifier, lineCode));
+                validTargets.add(new PresetTarget(identifier, lineCode, normalize(direction)));
             }
+        }
 
-            String direction = firstText(stopNode, "AbreviaturaBandera", "direction");
-            if (direction != null) {
-                var existing = stopTransitLineRepository
-                        .findByStopIdentifierAndLineCodeAndDirection(identifier, line.getCode(), direction);
-                if (existing.isEmpty()) {
-                    stop.addTransitLine(new StopLineDirection(
-                            entityManager.getReference(TransitLine.class, line.getCode()),
-                            direction,
-                            firstText(stopNode, "AbreviaturaAmpliadaBandera", "expandedDirection"),
-                            sequenceIndex
-                    ));
-                } else {
-                    // Update the route sequence order for existing records so the map renders correctly.
-                    existing.get().setStopOrder(sequenceIndex);
-                }
-            }
-            sequenceIndex++;
+        var invalid = presetRepository.findAll().stream()
+                .filter(preset -> {
+                    String internalLine = commercialToInternal.getOrDefault(
+                            normalize(preset.getCodigoLinea()), preset.getCodigoLinea());
+                    if (preset.getBandera() == null || preset.getBandera().isBlank()) {
+                        return !validStopLines.contains(new StopLine(preset.getIdentificadorParada(), internalLine));
+                    }
+                    return !validTargets.contains(new PresetTarget(
+                            preset.getIdentificadorParada(), internalLine, normalize(preset.getBandera())));
+                })
+                .toList();
+        if (!invalid.isEmpty()) {
+            presetRepository.deleteAll(invalid);
         }
     }
 
+    private static String normalize(String value) {
+        return value == null ? "" : value.trim().toUpperCase(Locale.ROOT);
+    }
+
+    private record StopLine(String stopIdentifier, String lineCode) {}
+
+    private record PresetTarget(String stopIdentifier, String lineCode, String direction) {}
+
     private void persistTransitStop(JsonNode stopNode) {
         String identifier = requiredText(stopNode, "identifier");
-        TransitStop stop = new TransitStop(
-                identifier,
-                textOrNull(stopNode, "code"),
-                textOrNull(stopNode, "description"),
-                doubleOrNull(stopNode, "latitude"),
-                doubleOrNull(stopNode, "longitude")
-        );
+        TransitStop stop = entityManager.find(TransitStop.class, identifier);
+        if (stop == null) {
+            stop = new TransitStop(
+                    identifier,
+                    textOrNull(stopNode, "code"),
+                    textOrNull(stopNode, "description"),
+                    doubleOrNull(stopNode, "latitude"),
+                    doubleOrNull(stopNode, "longitude")
+            );
+            entityManager.persist(stop);
+        } else {
+            updateTransitStop(stop, stopNode);
+        }
         int lineSequenceIndex = 0;
         for (JsonNode lineNode : stopNode.path("lines")) {
             String lineCode = requiredText(lineNode, "lineCode");
-            stop.addTransitLine(new StopLineDirection(
-                    entityManager.getReference(TransitLine.class, lineCode),
-                    requiredText(lineNode, "direction"),
-                    textOrNull(lineNode, "expandedDirection"),
-                    intOrDefault(lineNode, "stopOrder", lineSequenceIndex++)
-            ));
+            String direction = requiredText(lineNode, "direction");
+            int stopOrder = intOrDefault(lineNode, "stopOrder", lineSequenceIndex++);
+            var existing = stopTransitLineRepository
+                    .findByStopIdentifierAndLineCodeAndDirection(identifier, lineCode, direction);
+            if (existing.isPresent()) {
+                existing.get().setExpandedDirection(textOrNull(lineNode, "expandedDirection"));
+                existing.get().setStopOrder(stopOrder);
+            } else {
+                stop.addTransitLine(new StopLineDirection(
+                        entityManager.getReference(TransitLine.class, lineCode),
+                        direction,
+                        textOrNull(lineNode, "expandedDirection"),
+                        stopOrder
+                ));
+            }
         }
-        entityManager.persist(stop);
     }
 
     private void upsertTransitLine(String code, String name) {

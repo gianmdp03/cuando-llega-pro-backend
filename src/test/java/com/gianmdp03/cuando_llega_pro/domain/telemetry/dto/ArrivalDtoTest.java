@@ -24,7 +24,8 @@ class ArrivalDtoTest {
             assertThat(TelemetryStatus.values()).containsExactly(
                     TelemetryStatus.LIVE,
                     TelemetryStatus.ESTIMATED_FALLBACK,
-                    TelemetryStatus.EXPIRED
+                    TelemetryStatus.EXPIRED,
+                    TelemetryStatus.UNAVAILABLE
             );
         }
     }

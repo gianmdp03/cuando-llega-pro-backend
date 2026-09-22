@@ -12,6 +12,7 @@ import com.gianmdp03.cuando_llega_pro.domain.telemetry.dto.ArrivalResponseDTO;
  * @param bandera             route branch / variant
  * @param config              preset visual and notification configuration
  * @param telemetry           real-time or extrapolated arrival telemetry
+ * @param error               safe user-facing reason when telemetry is unavailable
  */
 public record DashboardPresetArrivalDTO(
         Long presetId,
@@ -19,5 +20,17 @@ public record DashboardPresetArrivalDTO(
         String identificadorParada,
         String bandera,
         PresetConfig config,
-        ArrivalResponseDTO telemetry
-) {}
+        ArrivalResponseDTO telemetry,
+        String error
+) {
+    public DashboardPresetArrivalDTO(
+            Long presetId,
+            String codigoLinea,
+            String identificadorParada,
+            String bandera,
+            PresetConfig config,
+            ArrivalResponseDTO telemetry
+    ) {
+        this(presetId, codigoLinea, identificadorParada, bandera, config, telemetry, null);
+    }
+}

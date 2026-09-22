@@ -5,12 +5,14 @@ import com.gianmdp03.cuando_llega_pro.domain.dashboard.dto.DashboardResponseDTO;
 import com.gianmdp03.cuando_llega_pro.domain.preset.Preset;
 import com.gianmdp03.cuando_llega_pro.domain.preset.PresetRepository;
 import com.gianmdp03.cuando_llega_pro.domain.telemetry.dto.ArrivalResponseDTO;
+import com.gianmdp03.cuando_llega_pro.domain.telemetry.model.TelemetryStatus;
 import com.gianmdp03.cuando_llega_pro.domain.telemetry.service.ArrivalsService;
 import com.gianmdp03.cuando_llega_pro.domain.user.User;
 import com.gianmdp03.cuando_llega_pro.domain.user.UserRepository;
 import com.gianmdp03.cuando_llega_pro.exception.ResourceNotFoundException;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.time.Instant;
 import java.util.List;
@@ -22,8 +24,9 @@ import java.util.concurrent.Executors;
  * across all configured transit presets for a user using Java 25 Virtual Thread fan-out.
  */
 @Service
-@Transactional(readOnly = true)
 public class DashboardService {
+
+    private static final Logger log = LoggerFactory.getLogger(DashboardService.class);
 
     private final PresetRepository presetRepository;
     private final UserRepository userRepository;
@@ -58,21 +61,7 @@ public class DashboardService {
 
         try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
             List<CompletableFuture<DashboardPresetArrivalDTO>> futures = presets.stream()
-                    .map(preset -> CompletableFuture.supplyAsync(() -> {
-                        ArrivalResponseDTO telemetry = arrivalsService.getArrivals(
-                                preset.getCodigoLinea(),
-                                preset.getIdentificadorParada()
-                        );
-                        ArrivalResponseDTO filteredTelemetry = filterTelemetryByBranch(telemetry, preset.getBandera());
-                        return new DashboardPresetArrivalDTO(
-                                preset.getId(),
-                                preset.getCodigoLinea(),
-                                preset.getIdentificadorParada(),
-                                preset.getBandera(),
-                                preset.getConfig(),
-                                filteredTelemetry
-                        );
-                    }, executor))
+                    .map(preset -> CompletableFuture.supplyAsync(() -> resolvePresetTelemetry(preset), executor))
                     .toList();
 
             CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
@@ -82,6 +71,40 @@ public class DashboardService {
                     .toList();
 
             return new DashboardResponseDTO(email, Instant.now(), results.size(), results);
+        }
+    }
+
+    private DashboardPresetArrivalDTO resolvePresetTelemetry(Preset preset) {
+        try {
+            ArrivalResponseDTO telemetry = arrivalsService.getArrivals(
+                    preset.getCodigoLinea(),
+                    preset.getIdentificadorParada()
+            );
+            return new DashboardPresetArrivalDTO(
+                    preset.getId(),
+                    preset.getCodigoLinea(),
+                    preset.getIdentificadorParada(),
+                    preset.getBandera(),
+                    preset.getConfig(),
+                    filterTelemetryByBranch(telemetry, preset.getBandera()),
+                    null
+            );
+        } catch (RuntimeException exception) {
+            log.warn("Dashboard telemetry unavailable for presetId={} lineCode={} stopId={}: {}",
+                    preset.getId(), preset.getCodigoLinea(), preset.getIdentificadorParada(), exception.toString());
+            return new DashboardPresetArrivalDTO(
+                    preset.getId(),
+                    preset.getCodigoLinea(),
+                    preset.getIdentificadorParada(),
+                    preset.getBandera(),
+                    preset.getConfig(),
+                    ArrivalResponseDTO.empty(
+                            preset.getCodigoLinea(),
+                            preset.getIdentificadorParada(),
+                            TelemetryStatus.UNAVAILABLE
+                    ),
+                    "Información temporalmente no disponible."
+            );
         }
     }
 

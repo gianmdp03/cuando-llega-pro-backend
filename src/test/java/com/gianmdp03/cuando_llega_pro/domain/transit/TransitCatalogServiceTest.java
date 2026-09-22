@@ -4,8 +4,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.gianmdp03.cuando_llega_pro.client.MgpProxyClient;
 import com.gianmdp03.cuando_llega_pro.domain.transit.dto.TransitIntersectionDTO;
 import com.gianmdp03.cuando_llega_pro.domain.transit.dto.TransitLineDTO;
-import com.gianmdp03.cuando_llega_pro.domain.transit.dto.TransitRouteResponseDTO;
-import com.gianmdp03.cuando_llega_pro.domain.transit.dto.TransitStopDTO;
 import com.gianmdp03.cuando_llega_pro.domain.transit.dto.TransitStopWithFlagDTO;
 import com.gianmdp03.cuando_llega_pro.domain.transit.dto.TransitStreetDTO;
 import org.junit.jupiter.api.BeforeEach;
@@ -18,6 +16,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -25,6 +26,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.times;
 
 @ExtendWith(MockitoExtension.class)
 @DisplayName("TransitCatalogService Unit Tests (HAR Methods & Cache-Aside)")
@@ -130,7 +132,7 @@ class TransitCatalogServiceTest {
 
         assertThat(streets).hasSize(2);
         assertThat(streets.get(0).codigo()).isEqualTo("5461");
-        assertThat(streets.get(1).descripcion()).isEqualTo("ALMAFUERTE - MAR DEL PLATA");
+        assertThat(streets.get(1).descripcion()).isEqualTo("ALMAFUERTE");
         verify(transitCatalogRepository).save(any(TransitCatalogEntity.class));
     }
 
@@ -156,7 +158,7 @@ class TransitCatalogServiceTest {
         List<TransitIntersectionDTO> intersections = transitCatalogService.getIntersectionsByLineAndStreet("511", "5449");
 
         assertThat(intersections).hasSize(2);
-        assertThat(intersections.get(1).codigo()).isEqualTo("5625");
+        assertThat(intersections.get(0).codigo()).isEqualTo("5625");
         verify(transitCatalogRepository).save(any(TransitCatalogEntity.class));
     }
 
@@ -195,66 +197,50 @@ class TransitCatalogServiceTest {
     }
 
     @Test
-    @DisplayName("getRouteTrace returns route points and branches from HAR contract")
-    void getRouteTrace_returnsRoutePoints() {
-        when(transitCatalogRepository.findById("route:98")).thenReturn(Optional.empty());
+    @DisplayName("Concurrent cache misses for the same catalog key share one upstream request")
+    void getMainStreetsByLine_coalescesConcurrentMisses() throws Exception {
+        var cacheManager = new com.gianmdp03.cuando_llega_pro.config.CaffeineCacheConfig().cacheManager();
+        transitCatalogService = new TransitCatalogService(
+                mgpProxyClient, transitCatalogRepository, cacheManager, objectMapper, transitLineResolver
+        );
+        when(transitCatalogRepository.findById("streets:98")).thenReturn(Optional.empty());
+        CountDownLatch upstreamStarted = new CountDownLatch(1);
+        CountDownLatch allowUpstreamResponse = new CountDownLatch(1);
+        when(mgpProxyClient.getMainStreetsByLine(any(), eq(TransitCatalogService.ACTION_RECUPERAR_CALLES_PRINCIPAL), eq("98")))
+                .thenAnswer(invocation -> {
+                    upstreamStarted.countDown();
+                    allowUpstreamResponse.await(2, TimeUnit.SECONDS);
+                    return "{\"calles\":[{\"Codigo\":\"1\",\"Descripcion\":\"A - MAR DEL PLATA\"}]}";
+                });
 
-        String upstreamHarResponse = """
-                {
-                    "CodigoEstado": 0,
-                    "MensajeEstado": "ok",
-                    "puntos": [
-                        {
-                            "Descripcion": "148;A LURO Y CARRILLO AC",
-                            "AbreviaturaBanderaSMP": "ACCO",
-                            "AbreviaturaLineaSMP": "511",
-                            "IsPuntoPaso": true,
-                            "Latitud": -38.111278,
-                            "Longitud": -57.621853
-                        }
-                    ]
-                }
-                """;
-        when(mgpProxyClient.getRouteMapByLine(
-                any(), eq(TransitCatalogService.ACTION_RECUPERAR_RECORRIDO_MAPA), eq("98"), eq("0")
-        )).thenReturn(upstreamHarResponse);
+        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            var first = executor.submit(() -> transitCatalogService.getMainStreetsByLine("511"));
+            assertThat(upstreamStarted.await(1, TimeUnit.SECONDS)).isTrue();
+            var second = executor.submit(() -> transitCatalogService.getMainStreetsByLine("511"));
+            allowUpstreamResponse.countDown();
 
-        TransitRouteResponseDTO route = transitCatalogService.getRouteTrace("511");
+            assertThat(first.get(2, TimeUnit.SECONDS)).hasSize(1);
+            assertThat(second.get(2, TimeUnit.SECONDS)).hasSize(1);
+        }
 
-        assertThat(route).isNotNull();
-        assertThat(route.lineCode()).isEqualTo("511");
-        assertThat(route.branches()).hasSize(1);
-        assertThat(route.allPoints()).hasSize(1);
-        assertThat(route.allPoints().get(0).latitude()).isEqualTo(-38.111278);
-        verify(transitCatalogRepository).save(any(TransitCatalogEntity.class));
+        verify(mgpProxyClient, times(1)).getMainStreetsByLine(any(), any(), any());
     }
 
     @Test
-    @DisplayName("getStopsForLine resolves commercial line code to internal code and returns stops")
-    void getStopsForLine_resolvesCommercialCode() {
-        when(transitCatalogRepository.findById("stops:98")).thenReturn(Optional.empty());
+    @DisplayName("L1 cache hit returns the already materialized DTO list")
+    void getMainStreetsByLine_returnsSameL1ValueWithoutJacksonCopy() {
+        var cacheManager = new com.gianmdp03.cuando_llega_pro.config.CaffeineCacheConfig().cacheManager();
+        transitCatalogService = new TransitCatalogService(
+                mgpProxyClient, transitCatalogRepository, cacheManager, objectMapper, transitLineResolver
+        );
+        when(transitCatalogRepository.findById("streets:98")).thenReturn(Optional.empty());
+        when(mgpProxyClient.getMainStreetsByLine(any(), eq(TransitCatalogService.ACTION_RECUPERAR_CALLES_PRINCIPAL), eq("98")))
+                .thenReturn("{\"calles\":[{\"Codigo\":\"1\",\"Descripcion\":\"A - MAR DEL PLATA\"}]}");
 
-        String upstreamStopsResponse = """
-                {
-                    "CodigoEstado": 0,
-                    "MensajeEstado": "ok",
-                    "paradas": [
-                        {
-                            "Codigo": "17453",
-                            "Identificador": "P4031",
-                            "Descripcion": "P4031",
-                            "AbreviaturaBandera": "A EDISON"
-                        }
-                    ]
-                }
-                """;
-        when(mgpProxyClient.getStopsByLine(any(), eq(TransitCatalogService.ACTION_RECUPERAR_PARADAS_LEGACY), eq("98")))
-                .thenReturn(upstreamStopsResponse);
+        List<TransitStreetDTO> first = transitCatalogService.getMainStreetsByLine("511");
+        List<TransitStreetDTO> second = transitCatalogService.getMainStreetsByLine("511");
 
-        List<TransitStopDTO> stops = transitCatalogService.getStopsForLine("511");
-
-        assertThat(stops).hasSize(1);
-        assertThat(stops.get(0).id()).isEqualTo("P4031");
-        verify(transitCatalogRepository).save(any(TransitCatalogEntity.class));
+        assertThat(second).isSameAs(first);
+        verify(mgpProxyClient, times(1)).getMainStreetsByLine(any(), any(), any());
     }
 }

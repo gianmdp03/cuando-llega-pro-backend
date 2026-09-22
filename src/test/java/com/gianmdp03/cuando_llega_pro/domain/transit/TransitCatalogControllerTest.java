@@ -2,8 +2,6 @@ package com.gianmdp03.cuando_llega_pro.domain.transit;
 
 import com.gianmdp03.cuando_llega_pro.domain.transit.dto.TransitIntersectionDTO;
 import com.gianmdp03.cuando_llega_pro.domain.transit.dto.TransitLineDTO;
-import com.gianmdp03.cuando_llega_pro.domain.transit.dto.TransitRouteResponseDTO;
-import com.gianmdp03.cuando_llega_pro.domain.transit.dto.TransitStopDTO;
 import com.gianmdp03.cuando_llega_pro.domain.transit.dto.TransitStopWithFlagDTO;
 import com.gianmdp03.cuando_llega_pro.domain.transit.dto.TransitStreetDTO;
 import com.gianmdp03.cuando_llega_pro.exception.GlobalExceptionHandler;
@@ -107,30 +105,4 @@ class TransitCatalogControllerTest {
                 .andExpect(jsonPath("$[0].abreviaturaBandera", is("A ACANTILADOS")));
     }
 
-    @Test
-    @DisplayName("GET /api/v1/transit/lines/{lineCode}/route returns 200 with polyline route")
-    void getRoute_returns200() throws Exception {
-        when(transitCatalogService.getRouteTrace("511")).thenReturn(
-                new TransitRouteResponseDTO("511", List.of(), List.of(), List.of())
-        );
-
-        mockMvc.perform(get("/api/v1/transit/lines/511/route")
-                        .contentType(MediaType.APPLICATION_JSON))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.lineCode", is("511")));
-    }
-
-    @Test
-    @DisplayName("GET /api/v1/transit/lines/{lineCode}/stops returns 200 with stops")
-    void getStops_returns200() throws Exception {
-        when(transitCatalogService.getStopsForLine("511")).thenReturn(List.of(
-                new TransitStopDTO("P4031", "P4031", "ALMAFUERTE", -38.0, -57.5)
-        ));
-
-        mockMvc.perform(get("/api/v1/transit/lines/511/stops")
-                        .contentType(MediaType.APPLICATION_JSON))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$", hasSize(1)))
-                .andExpect(jsonPath("$[0].id", is("P4031")));
-    }
 }

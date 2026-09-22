@@ -76,34 +76,4 @@ public interface MgpProxyClient {
             @RequestParam("codInterseccion") String codInterseccion
     );
 
-    /**
-     * Action: RecuperarRecorridoParaMapaAbrevYAmpliPorEntidadYLinea
-     */
-    @PostExchange(value = "/proxy", contentType = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
-    String getRouteMapByLine(
-            @RequestHeader(name = "X-Request-ID", required = false) String requestId,
-            @RequestParam("accion") String accion,
-            @RequestParam("codLinea") String codLinea,
-            @RequestParam(value = "isSublinea", defaultValue = "0") String isSublinea
-    );
-
-    /**
-     * Legacy Action: RecuperarParadasPorLinea
-     */
-    @PostExchange(value = "/proxy", contentType = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
-    String getStopsByLine(
-            @RequestHeader(name = "X-Request-ID", required = false) String id,
-            @RequestParam("accion") String accion,
-            @RequestParam("codigoLinea") String lineCode
-    );
-
-    /**
-     * Legacy Action: RecuperarRecorridosPorLinea
-     */
-    @PostExchange(value = "/proxy", contentType = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
-    String getRouteByLine(
-            @RequestHeader(name = "X-Request-ID", required = false) String id,
-            @RequestParam("accion") String accion,
-            @RequestParam("codigoLinea") String lineCode
-    );
 }

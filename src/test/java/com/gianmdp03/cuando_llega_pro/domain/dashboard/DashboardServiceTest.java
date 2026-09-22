@@ -114,6 +114,32 @@ class DashboardServiceTest {
     class VirtualThreadFanOutTests {
 
         @Test
+        @DisplayName("Keeps healthy presets when one upstream request fails")
+        void keepsHealthyPresetsWhenOneRequestFails() {
+            Preset healthyPreset = new Preset(sampleUser, "501", "P-101", "A", sampleConfig);
+            ReflectionTestUtils.setField(healthyPreset, "id", 10L);
+            Preset unavailablePreset = new Preset(sampleUser, "502", "P-202", "B", sampleConfig);
+            ReflectionTestUtils.setField(unavailablePreset, "id", 20L);
+
+            when(userRepository.findByEmail("tester@example.com")).thenReturn(Optional.of(sampleUser));
+            when(presetRepository.findAllByUserIdWithUser(1L))
+                    .thenReturn(List.of(healthyPreset, unavailablePreset));
+            ArrivalResponseDTO healthyTelemetry = ArrivalResponseDTO.empty("501", "P-101", TelemetryStatus.LIVE);
+            when(arrivalsService.getArrivals("501", "P-101")).thenReturn(healthyTelemetry);
+            when(arrivalsService.getArrivals("502", "P-202"))
+                    .thenThrow(new RuntimeException("upstream unavailable"));
+
+            DashboardResponseDTO response = dashboardService.getDashboardForUser("tester@example.com");
+
+            assertThat(response.presets()).hasSize(2);
+            assertThat(response.presets().get(0).telemetry().status()).isEqualTo(TelemetryStatus.LIVE);
+            assertThat(response.presets().get(0).telemetry().branch()).isEqualTo("A");
+            assertThat(response.presets().get(0).error()).isNull();
+            assertThat(response.presets().get(1).telemetry().status()).isEqualTo(TelemetryStatus.UNAVAILABLE);
+            assertThat(response.presets().get(1).error()).isEqualTo("Información temporalmente no disponible.");
+        }
+
+        @Test
         @DisplayName("Forks tasks on Java 25 Virtual Threads and joins all preset arrival telemetries concurrently")
         void fansOutConcurrentlyUsingVirtualThreads() {
             Preset preset1 = new Preset(sampleUser, "501", "P-101", "A", sampleConfig);

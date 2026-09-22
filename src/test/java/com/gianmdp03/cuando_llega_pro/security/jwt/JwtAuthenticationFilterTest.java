@@ -1,5 +1,6 @@
 package com.gianmdp03.cuando_llega_pro.security.jwt;
 
+import com.gianmdp03.cuando_llega_pro.domain.user.User;
 import com.gianmdp03.cuando_llega_pro.domain.user.UserRepository;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -17,6 +18,7 @@ import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.io.IOException;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.verify;
@@ -56,8 +58,8 @@ class JwtAuthenticationFilterTest {
 
         when(tokenProvider.validateToken("valid.jwt.token")).thenReturn(true);
         when(tokenProvider.getEmailFromToken("valid.jwt.token")).thenReturn("user@example.com");
-        when(userRepository.existsByEmail("user@example.com")).thenReturn(true);
-        when(tokenProvider.getRoleFromToken("valid.jwt.token")).thenReturn("ROLE_ADMIN");
+        when(userRepository.findByEmail("user@example.com"))
+                .thenReturn(Optional.of(new User("user@example.com", "password", "User", "ROLE_ADMIN")));
 
         filter.doFilterInternal(request, response, filterChain);
 
@@ -79,8 +81,8 @@ class JwtAuthenticationFilterTest {
 
         when(tokenProvider.validateToken("valid.jwt.token")).thenReturn(true);
         when(tokenProvider.getEmailFromToken("valid.jwt.token")).thenReturn("user@example.com");
-        when(userRepository.existsByEmail("user@example.com")).thenReturn(true);
-        when(tokenProvider.getRoleFromToken("valid.jwt.token")).thenReturn("USER");
+        when(userRepository.findByEmail("user@example.com"))
+                .thenReturn(Optional.of(new User("user@example.com", "password", "User", "USER")));
 
         filter.doFilterInternal(request, response, filterChain);
 
@@ -102,7 +104,7 @@ class JwtAuthenticationFilterTest {
 
         when(tokenProvider.validateToken("valid.jwt.token")).thenReturn(true);
         when(tokenProvider.getEmailFromToken("valid.jwt.token")).thenReturn("deleted@example.com");
-        when(userRepository.existsByEmail("deleted@example.com")).thenReturn(false);
+        when(userRepository.findByEmail("deleted@example.com")).thenReturn(Optional.empty());
 
         filter.doFilterInternal(request, response, filterChain);
 

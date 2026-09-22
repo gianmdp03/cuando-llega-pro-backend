@@ -54,7 +54,6 @@ public class ArrivalsService {
     private final TransitLineResolver transitLineResolver;
     private final StopLocationRepository stopLocationRepository;
     private final CircuitBreaker circuitBreaker;
-    private final MgpRequestPacer mgpRequestPacer;
 
     /**
      * Fallback in-memory store retaining the last confirmed telemetry snapshot per stop and line.
@@ -78,7 +77,7 @@ public class ArrivalsService {
             ExtrapolationEngine extrapolationEngine,
             CacheManager cacheManager
     ) {
-        this(mgpProxyClient, objectMapper, extrapolationEngine, cacheManager, new TelemetryMapper(objectMapper), new TransitLineResolver(), null, null, new MgpRequestPacer(0));
+        this(mgpProxyClient, objectMapper, extrapolationEngine, cacheManager, new TelemetryMapper(objectMapper), new TransitLineResolver(), null, null);
     }
 
     public ArrivalsService(
@@ -89,7 +88,7 @@ public class ArrivalsService {
             TelemetryMapper telemetryMapper,
             TransitLineResolver transitLineResolver
     ) {
-        this(mgpProxyClient, objectMapper, extrapolationEngine, cacheManager, telemetryMapper, transitLineResolver, null, null, new MgpRequestPacer(0));
+        this(mgpProxyClient, objectMapper, extrapolationEngine, cacheManager, telemetryMapper, transitLineResolver, null, null);
     }
 
     public ArrivalsService(
@@ -101,7 +100,7 @@ public class ArrivalsService {
             TransitLineResolver transitLineResolver,
             StopLocationRepository stopLocationRepository
     ) {
-        this(mgpProxyClient, objectMapper, extrapolationEngine, cacheManager, telemetryMapper, transitLineResolver, stopLocationRepository, null, new MgpRequestPacer(0));
+        this(mgpProxyClient, objectMapper, extrapolationEngine, cacheManager, telemetryMapper, transitLineResolver, stopLocationRepository, null);
     }
 
     @Autowired
@@ -113,8 +112,7 @@ public class ArrivalsService {
             TelemetryMapper telemetryMapper,
             TransitLineResolver transitLineResolver,
             @Autowired(required = false) StopLocationRepository stopLocationRepository,
-            @Autowired(required = false) CircuitBreaker circuitBreaker,
-            MgpRequestPacer mgpRequestPacer
+            @Autowired(required = false) CircuitBreaker circuitBreaker
     ) {
         this.mgpProxyClient = mgpProxyClient;
         this.objectMapper = objectMapper;
@@ -124,7 +122,6 @@ public class ArrivalsService {
         this.transitLineResolver = transitLineResolver != null ? transitLineResolver : new TransitLineResolver();
         this.stopLocationRepository = stopLocationRepository;
         this.circuitBreaker = circuitBreaker != null ? circuitBreaker : CircuitBreaker.ofDefaults("mgpUpstream");
-        this.mgpRequestPacer = mgpRequestPacer;
     }
 
     /**
@@ -224,10 +221,10 @@ public class ArrivalsService {
             log.debug("Fetching live telemetry: stopId={}, lineCode={}, internalCode={}, reqId={}",
                     stopId, lineCode, internalLineCode, requestId);
 
-            // The circuit breaker avoids upstream calls while open; the pacer spaces calls that do go upstream.
-            String rawJson = circuitBreaker.executeSupplier(() -> mgpRequestPacer.execute(
-                    () -> mgpProxyClient.getArrivals(requestId, UPSTREAM_ACTION, stopId.trim(), internalLineCode)
-            ));
+            // The circuit breaker avoids upstream calls while open; the HTTP client applies global pacing.
+            String rawJson = circuitBreaker.executeSupplier(() ->
+                    mgpProxyClient.getArrivals(requestId, UPSTREAM_ACTION, stopId.trim(), internalLineCode)
+            );
 
             if (rawJson == null || rawJson.isBlank()) {
                 throw new UpstreamServiceException("Empty response payload received from upstream proxy for stop: "
@@ -461,6 +458,11 @@ public class ArrivalsService {
             if (trackedUnits.isEmpty()) {
                 vehicleTrackingBuffer.remove(stopLineKey, trackedUnits);
             }
+        });
+        Instant fallbackCutoff = Instant.now().minus(Duration.ofHours(1));
+        lastKnownTelemetryStore.entrySet().removeIf(entry -> {
+            ArrivalResponseDTO snapshot = entry.getValue();
+            return snapshot == null || snapshot.timestamp() == null || snapshot.timestamp().isBefore(fallbackCutoff);
         });
         log.debug("Cleaned up stale vehicle units older than 30 minutes");
     }

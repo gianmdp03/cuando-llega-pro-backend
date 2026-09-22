@@ -17,7 +17,9 @@ class CaffeineCacheConfigTest {
         assertThat(cacheManager.getCacheNames()).containsExactlyInAnyOrder(
                 CaffeineCacheConfig.ARRIVALS_CACHE,
                 CaffeineCacheConfig.LINES_CACHE,
-                CaffeineCacheConfig.TRANSIT_CATALOG_CACHE
+                CaffeineCacheConfig.TRANSIT_CATALOG_CACHE,
+                CaffeineCacheConfig.TRANSIT_MAP_CACHE,
+                CaffeineCacheConfig.FALLBACK_ARRIVALS_CACHE
         );
 
         Cache arrivalsCache = cacheManager.getCache("arrivals");

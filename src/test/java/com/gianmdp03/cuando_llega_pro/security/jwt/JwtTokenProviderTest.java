@@ -5,6 +5,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
 
 class JwtTokenProviderTest {
 
@@ -72,5 +73,13 @@ class JwtTokenProviderTest {
         assertThat(rawProvider.getEmailFromToken(token)).isEqualTo("ascii@test.com");
         assertThat(rawProvider.getUserIdFromToken(token)).isEqualTo(99L);
         assertThat(rawProvider.getRoleFromToken(token)).isEqualTo("ROLE_ADMIN");
+    }
+
+    @Test
+    @DisplayName("Should reject a secret shorter than the HS256 minimum")
+    void rejectsShortSecret() {
+        assertThatIllegalArgumentException()
+                .isThrownBy(() -> new JwtTokenProvider("short-secret", EXPIRATION_MS))
+                .withMessageContaining("at least 32 bytes");
     }
 }

@@ -53,7 +53,8 @@ public class CaffeineCacheConfig {
         cacheManager.registerCustomCache(
                 TRANSIT_CATALOG_CACHE,
                 Caffeine.newBuilder()
-                        .maximumSize(2000)
+                        .expireAfterWrite(Duration.ofHours(24))
+                        .maximumSize(2_000)
                         .recordStats()
                         .build()
         );
