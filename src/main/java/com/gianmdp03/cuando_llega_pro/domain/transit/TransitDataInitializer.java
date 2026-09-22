@@ -3,6 +3,7 @@ package com.gianmdp03.cuando_llega_pro.domain.transit;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.gianmdp03.cuando_llega_pro.domain.transit.repository.TransitStopRepository;
+import com.gianmdp03.cuando_llega_pro.domain.transit.repository.TransitRouteRepository;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -25,21 +26,23 @@ public class TransitDataInitializer implements ApplicationRunner {
     private static final int BATCH_SIZE = 200;
 
     private final TransitStopRepository stopRepository;
+    private final TransitRouteRepository routeRepository;
     private final TransitDataPersistenceService transitDataPersistenceService;
     private final ObjectMapper objectMapper;
 
     @Override
     @Transactional
     public void run(ApplicationArguments args) throws Exception {
-        if (stopRepository.count() > 0) {
-            return;
-        }
-
         ClassPathResource resource = new ClassPathResource("paradas_mgp.json");
         try (InputStream inputStream = resource.getInputStream()) {
             JsonNode dataset = objectMapper.readTree(inputStream);
-            transitDataPersistenceService.replaceEmptyCatalog(dataset, BATCH_SIZE);
-            log.info("Catálogo estático de transporte inicializado con {} stops", stopRepository.count());
+            if (stopRepository.count() == 0) {
+                transitDataPersistenceService.replaceEmptyCatalog(dataset, BATCH_SIZE);
+                log.info("Catálogo estático de transporte inicializado con {} stops", stopRepository.count());
+            } else if (routeRepository.count() == 0) {
+                transitDataPersistenceService.replaceRoutes(dataset);
+                log.info("Geometrías estáticas de transporte inicializadas con {} recorridos", routeRepository.count());
+            }
         }
     }
 }

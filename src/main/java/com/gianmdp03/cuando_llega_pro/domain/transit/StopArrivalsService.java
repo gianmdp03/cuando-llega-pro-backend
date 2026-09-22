@@ -18,12 +18,6 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CompletionService;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.ExecutorCompletionService;
-import java.util.concurrent.Executors;
-import java.util.function.Consumer;
 
 /** Combines static stop catalogue data with live telemetry without exposing upstream fan-out to map clients. */
 @Service
@@ -47,29 +41,6 @@ public class StopArrivalsService {
     /** Validates that a stop exists before an HTTP response is committed as an event stream. */
     public void requireStop(String identifier) {
         loadStop(identifier);
-    }
-
-    /**
-     * Emits one result per line as each upstream lookup finishes. MGP pacing and concurrency are enforced by
-     * {@link ArrivalsService}, while this service keeps the map client unaware of the fan-out.
-     */
-    public void streamArrivals(String identifier, Consumer<StopLineArrivalsDto> consumer) {
-        TransitStop stop = loadStop(identifier);
-        List<List<StopLineDirection>> lineDirections = List.copyOf(groupDirectionsByLine(stop).values());
-
-        try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-            CompletionService<StopLineArrivalsDto> completed = new ExecutorCompletionService<>(executor);
-            lineDirections.forEach(directions -> completed.submit(() -> getLineArrivals(stop.getIdentifier(), directions)));
-
-            for (int index = 0; index < lineDirections.size(); index++) {
-                consumer.accept(completed.take().get());
-            }
-        } catch (InterruptedException exception) {
-            Thread.currentThread().interrupt();
-            throw new IllegalStateException("Arrival stream interrupted", exception);
-        } catch (ExecutionException exception) {
-            throw new IllegalStateException("Unable to load stop arrivals", exception.getCause());
-        }
     }
 
     private Map<String, List<StopLineDirection>> groupDirectionsByLine(TransitStop stop) {

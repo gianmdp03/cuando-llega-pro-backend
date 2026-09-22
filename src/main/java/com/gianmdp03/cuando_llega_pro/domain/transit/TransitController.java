@@ -5,6 +5,7 @@ import com.gianmdp03.cuando_llega_pro.domain.transit.dto.StopDetailDto;
 import com.gianmdp03.cuando_llega_pro.domain.transit.dto.StopArrivalsDto;
 import com.gianmdp03.cuando_llega_pro.domain.transit.dto.MapStopDto;
 import com.gianmdp03.cuando_llega_pro.domain.transit.dto.DirectionDto;
+import com.gianmdp03.cuando_llega_pro.domain.transit.dto.MapRouteDto;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -44,6 +45,11 @@ public class TransitController {
             @RequestParam String direction
     ) {
         return ResponseEntity.ok(transitService.getStops(lineCode, direction));
+    }
+
+    @GetMapping("/lines/{lineCode}/routes")
+    public ResponseEntity<List<MapRouteDto>> getRoutes(@PathVariable String lineCode) {
+        return ResponseEntity.ok(transitService.getRoutes(lineCode));
     }
 
     @GetMapping("/stops/{identifier}")

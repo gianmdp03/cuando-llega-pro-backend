@@ -20,7 +20,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.CopyOnWriteArrayList;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyList;
@@ -83,25 +82,6 @@ class StopArrivalsServiceTest {
         assertThat(response.lines().getFirst().status()).isEqualTo("UNAVAILABLE");
         assertThat(response.lines().getFirst().directions()).allSatisfy(direction -> assertThat(direction.arrivals()).isEmpty());
         assertThat(response.lines().getLast().status()).isEqualTo("LIVE");
-    }
-
-    @Test
-    void streamArrivals_emitsOneResultPerCommercialLine() {
-        TransitStop stop = stopWithTwoDirectionsFor521AndOneFor522();
-        List<String> emittedLineCodes = new CopyOnWriteArrayList<>();
-
-        when(stopRepository.findByIdentifierWithDirections("P3613")).thenReturn(Optional.of(stop));
-        when(arrivalsService.getArrivals("521", "P3613")).thenReturn(liveResponse("521", "P3613"));
-        when(arrivalsService.getArrivals("522", "P3613")).thenReturn(liveResponse("522", "P3613"));
-        when(telemetryMapper.filterBusArrivalsByBranch(anyList(), eq("AL BOSQUE"))).thenReturn(List.of());
-        when(telemetryMapper.filterBusArrivalsByBranch(anyList(), eq("AL PUERTO"))).thenReturn(List.of());
-        when(telemetryMapper.filterBusArrivalsByBranch(anyList(), eq("AL FARO"))).thenReturn(List.of());
-
-        stopArrivalsService.streamArrivals("P3613", line -> emittedLineCodes.add(line.lineCode()));
-
-        assertThat(emittedLineCodes).containsExactlyInAnyOrder("521", "522");
-        verify(arrivalsService, times(1)).getArrivals("521", "P3613");
-        verify(arrivalsService, times(1)).getArrivals("522", "P3613");
     }
 
     private TransitStop stopWithTwoDirectionsFor521AndOneFor522() {

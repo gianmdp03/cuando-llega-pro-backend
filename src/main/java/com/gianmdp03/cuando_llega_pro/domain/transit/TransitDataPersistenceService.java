@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.gianmdp03.cuando_llega_pro.domain.transit.model.TransitLine;
 import com.gianmdp03.cuando_llega_pro.domain.transit.model.TransitStop;
 import com.gianmdp03.cuando_llega_pro.domain.transit.model.StopLineDirection;
+import com.gianmdp03.cuando_llega_pro.domain.transit.model.TransitRoute;
+import com.gianmdp03.cuando_llega_pro.domain.transit.model.TransitRoutePoint;
 import com.gianmdp03.cuando_llega_pro.domain.transit.repository.StopLineDirectionRepository;
 import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
@@ -30,6 +32,8 @@ public class TransitDataPersistenceService {
             upsertTransitLine(code, name);
         }
         entityManager.flush();
+        persistRoutes(dataset);
+        entityManager.flush();
 
         JsonNode stops = dataset.has("paradas") ? dataset.path("paradas") : dataset.path("stops");
         if (!stops.isArray()) {
@@ -44,6 +48,42 @@ public class TransitDataPersistenceService {
             }
         }
         entityManager.flush();
+    }
+
+    /** Imports MGP's ordered road geometry; it is independent from unordered physical stops. */
+    @Transactional
+    public void replaceRoutes(JsonNode dataset) {
+        persistRoutes(dataset);
+        entityManager.flush();
+    }
+
+    private void persistRoutes(JsonNode dataset) {
+        JsonNode routes = dataset.path("routes");
+        if (!routes.isArray()) {
+            return;
+        }
+        for (JsonNode routeNode : routes) {
+            String id = requiredText(routeNode, "id");
+            String lineCode = requiredText(routeNode, "lineCode");
+            String branch = requiredText(routeNode, "branch");
+            TransitRoute route = entityManager.find(TransitRoute.class, id);
+            if (route == null) {
+                route = new TransitRoute(id, entityManager.getReference(TransitLine.class, lineCode), branch,
+                        textOrNull(routeNode, "description"));
+                entityManager.persist(route);
+            }
+            java.util.List<TransitRoutePoint> points = new java.util.ArrayList<>();
+            int sequence = 0;
+            for (JsonNode point : routeNode.path("points")) {
+                Double latitude = doubleOrNull(point, "latitude");
+                Double longitude = doubleOrNull(point, "longitude");
+                if (latitude != null && longitude != null) {
+                    points.add(new TransitRoutePoint(sequence++, latitude, longitude,
+                            point.path("isPassThrough").asBoolean(false)));
+                }
+            }
+            route.replacePoints(points);
+        }
     }
 
     @Transactional

@@ -250,7 +250,7 @@ Actualmente algunas respuestas exponen ambos por motivos de diagnóstico:
 |---|---|---|
 | `GET /map/lines` | `code` | `name` |
 | `GET /map/stops/{identifier}` | `directions[].codeTransitLine` | `directions[].nameTransitLine` |
-| arribos consolidados/SSE | — | `lines[].lineCode` |
+| arribos consolidados | — | `lines[].lineCode` |
 
 No usar `code` ni `codeTransitLine` para construir la interacción de usuario. En particular, el selector debe mostrar y enviar `name`.
 
@@ -374,7 +374,7 @@ Esta ruta representa el poste/parada física y devuelve todas las combinaciones 
 GET /api/v1/transit/map/stops/P3613/arrivals
 ```
 
-Es una respuesta JSON que espera a completar las consultas de todas las líneas. Mantenerla para depuración, clientes sin SSE o cargas puntuales; para la pantalla interactiva se recomienda el stream SSE de la sección siguiente.
+Es una respuesta JSON que espera a completar las consultas de todas las líneas. Mantenerla para depuración o cargas puntuales. La pantalla interactiva del mapa debe mostrar primero los sentidos de la parada y consultar telemetría individual sólo cuando el usuario elige uno.
 
 ```json
 {
@@ -417,51 +417,7 @@ Si una línea no tiene fallback y MGP/proxy falla, el HTTP general sigue respond
 
 No ocultar automáticamente otras líneas por la falla de una sola.
 
-### 6.6 Arribos progresivos con Server-Sent Events (SSE): ruta principal del panel de parada
-
-```http
-GET /api/v1/transit/map/stops/P3613/arrivals/stream
-Accept: text/event-stream
-Authorization: Bearer <token>
-```
-
-La conexión queda abierta mientras el cliente la mantenga. No es una respuesta JSON única.
-
-Eventos:
-
-| Evento | Data | Cuándo llega |
-|---|---|---|
-| `cycle-start` | `{ "identifier": "P3613" }` | Inicio de cada ronda |
-| `line-arrivals` | Un `StopLineArrivalsDto` | Una vez por línea, ni bien termina esa consulta |
-| `cycle-complete` | `{ "identifier": "P3613" }` | Ya se emitieron todas las líneas de la ronda |
-| `stream-error` | `{ "message": "Unable to refresh stop arrivals" }` | Falla no recuperable del ciclo/stream |
-
-Ejemplo de wire format SSE:
-
-```text
-event: cycle-start
-data: {"identifier":"P3613"}
-
-event: line-arrivals
-data: {"lineCode":"521","status":"LIVE","timestamp":"2026-09-21T22:00:00Z","deltaMinutes":0,"directions":[...] ,"error":null}
-
-event: cycle-complete
-data: {"identifier":"P3613"}
-```
-
-El backend inicia una ronda inmediatamente y repite una nueva aproximadamente cada 20 segundos. Dentro de cada ronda inicia consultas de líneas en tareas virtuales, pero protege MGP globalmente: máximo dos inicios por segundo y máximo dos requests upstream simultáneos. Por ello no asumir orden de `line-arrivals`.
-
-#### Reglas frontend para SSE
-
-1. Abrir **un stream por panel de parada visible**, no uno por línea ni por pin.
-2. Reemplazar/actualizar sólo la línea recibida en cada `line-arrivals`; conservar las demás hasta su próxima actualización.
-3. Cerrar el stream al cerrar el panel, cambiar de parada, desmontar pantalla o pasar la aplicación a background.
-4. Reconectar con backoff si la red se corta. Al reconectar, el servidor entrega una ronda nueva.
-5. No abrir streams para pines que no están seleccionados.
-6. Si se usa navegador con `EventSource` nativo, recordar que normalmente no permite enviar header `Authorization`. Usar un cliente SSE que soporte headers de JWT, una implementación `fetch` streaming, o el mecanismo equivalente del framework móvil. No agregar token en query string.
-7. Postman puede inspeccionar el stream configurando `Accept: text/event-stream` y el header `Authorization`.
-
-### 6.7 Flujo recomendado del mapa
+### 6.6 Flujo recomendado del mapa
 
 ```text
 Selector de línea
@@ -475,11 +431,11 @@ Pines
   GET /map/lines/{commercialCode}/stops?direction={direction}
 
 Click en pin
-  opcional: GET /map/stops/{identifier} para metadatos estáticos
-  principal: GET /map/stops/{identifier}/arrivals/stream
+  GET /map/stops/{identifier} para metadatos estáticos
+  mostrar las líneas y sentidos sin consultar arribos
 
-Cerrar panel/cambiar pin
-  cerrar SSE anterior
+Elegir una línea/sentido o presionar "Actualizar"
+  GET /telemetry/arrivals?lineCode={lineCode}&stopId={identifier}&bandera={direction}
 ```
 
 ## 7. Telemetría individual
@@ -563,7 +519,7 @@ No calcular una ETA nueva desde `distanceMeters`, `speedKmH` o GPS en frontend. 
 - Peticiones simultáneas de la misma parada/línea se coalescen: no generan múltiples requests MGP.
 - Las claves usan ID interno, aunque el cliente envíe el comercial. Por ejemplo `511` y `98` comparten cache.
 
-No hacer polling individual cada segundo: para mapa usar SSE; para una pantalla individual, no consultar más rápido que aproximadamente 15–20 segundos.
+No hacer polling automático. Para mapa y pantalla individual, consultar al abrir un sentido y únicamente actualizar de nuevo por acción explícita del usuario; la caché del backend coalesce peticiones iguales.
 
 ## 8. Catálogo heredado de MGP
 
@@ -761,11 +717,8 @@ export type MapStop = {
 - [ ] Para mapa, consumir `/api/v1/transit/map/**`, no el catálogo heredado salvo que la pantalla use explícitamente el selector por calles.
 - [ ] Usar el código comercial (`name` / `nameTransitLine`) en los requests de mapa y telemetría.
 - [ ] Usar `identifier` como clave estable de parada y `vehicleUnit` como clave estable de colectivo.
-- [ ] Para el panel de parada, abrir una única conexión SSE autenticada; no hacer seis requests desde frontend.
-- [ ] Aplicar cada evento `line-arrivals` de manera incremental y tolerar orden no determinista.
-- [ ] Cerrar el SSE al navegar, desmontar, cambiar de pin o ir a background.
-- [ ] Actualizar visualmente el contador cada segundo, pero corregirlo con cada evento del backend.
+- [ ] Para el panel de parada, mostrar sus línea–sentido sin consultar arribos; al elegir uno, usar `/api/v1/telemetry/arrivals` con `lineCode`, `stopId` y `bandera`.
+- [ ] No usar polling automático: mostrar un botón de actualización manual para volver a consultar ese mismo sentido.
+- [ ] Actualizar visualmente el contador cada segundo desde la respuesta puntual recibida.
 - [ ] Diferenciar `LIVE`, `ESTIMATED_FALLBACK`, `EXPIRED` y `UNAVAILABLE` en UX.
 - [ ] No mostrar como real una ETA estimada, ni preservar en frontend por su cuenta coches que el backend dejó de emitir.
-- [ ] Nunca enviar el JWT como query parameter del SSE.
-

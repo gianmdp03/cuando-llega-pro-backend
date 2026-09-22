@@ -6,11 +6,13 @@ import com.gianmdp03.cuando_llega_pro.domain.transit.dto.LineDirectionDto;
 import com.gianmdp03.cuando_llega_pro.domain.transit.dto.StopDetailDto;
 import com.gianmdp03.cuando_llega_pro.domain.transit.dto.MapStopDto;
 import com.gianmdp03.cuando_llega_pro.domain.transit.dto.DirectionDto;
+import com.gianmdp03.cuando_llega_pro.domain.transit.dto.MapRouteDto;
 import com.gianmdp03.cuando_llega_pro.domain.transit.model.TransitStop;
 import com.gianmdp03.cuando_llega_pro.domain.transit.model.StopLineDirection;
 import com.gianmdp03.cuando_llega_pro.domain.transit.repository.TransitLineRepository;
 import com.gianmdp03.cuando_llega_pro.domain.transit.repository.StopLineDirectionRepository;
 import com.gianmdp03.cuando_llega_pro.domain.transit.repository.TransitStopRepository;
+import com.gianmdp03.cuando_llega_pro.domain.transit.repository.TransitRouteRepository;
 import com.gianmdp03.cuando_llega_pro.exception.ResourceNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.cache.annotation.Cacheable;
@@ -30,6 +32,7 @@ public class TransitService {
     private final TransitLineRepository lineRepository;
     private final TransitStopRepository stopRepository;
     private final StopLineDirectionRepository stopLineDirectionRepository;
+    private final TransitRouteRepository routeRepository;
     private final TransitLineResolver transitLineResolver;
 
     @Cacheable(cacheNames = CaffeineCacheConfig.TRANSIT_MAP_CACHE, key = "'lines'")
@@ -57,6 +60,20 @@ public class TransitService {
         requireLine(internalLineCode);
         return stopRepository.findByLineCodeAndDirection(internalLineCode, direction).stream()
                 .map(this::toMapStop)
+                .toList();
+    }
+
+    @Cacheable(cacheNames = CaffeineCacheConfig.TRANSIT_MAP_CACHE,
+            key = "'routes:' + @transitLineResolver.toInternalCode(#lineCode)")
+    public List<MapRouteDto> getRoutes(String lineCode) {
+        String internalLineCode = resolveInternalLineCode(lineCode);
+        requireLine(internalLineCode);
+        return routeRepository.findByLineCodeWithPoints(internalLineCode).stream()
+                .map(route -> new MapRouteDto(route.getId(), route.getBranch(), route.getDescription(),
+                        route.getPoints().stream()
+                                .sorted(java.util.Comparator.comparingInt(point -> point.getSequence()))
+                                .map(point -> List.of(point.getLongitude(), point.getLatitude()))
+                                .toList()))
                 .toList();
     }
 
