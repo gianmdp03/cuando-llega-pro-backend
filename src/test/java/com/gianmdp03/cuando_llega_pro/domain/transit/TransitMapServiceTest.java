@@ -91,4 +91,20 @@ class TransitMapServiceTest {
         assertThat(transitService.getStops("511", "AL BOSQUE")).isEmpty();
     }
 
+    @Test
+    void getNearbyStops_returnsOnlyStopsInsideTheRequestedRadius() {
+        TransitStop nearby = new TransitStop("P1", "1", "Nearby", -38.0000, -57.5400);
+        TransitStop outsideRadius = new TransitStop("P2", "2", "Outside", -37.9900, -57.5400);
+        when(stopRepository.findWithinBoundsWithDirections(
+                org.mockito.ArgumentMatchers.anyDouble(),
+                org.mockito.ArgumentMatchers.anyDouble(),
+                org.mockito.ArgumentMatchers.anyDouble(),
+                org.mockito.ArgumentMatchers.anyDouble()
+        )).thenReturn(List.of(outsideRadius, nearby));
+
+        assertThat(transitService.getNearbyStops(-38.0000, -57.5400, 500))
+                .extracting(stop -> stop.identifier())
+                .containsExactly("P1");
+    }
+
 }

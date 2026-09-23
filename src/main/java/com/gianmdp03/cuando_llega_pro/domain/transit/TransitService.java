@@ -7,6 +7,7 @@ import com.gianmdp03.cuando_llega_pro.domain.transit.dto.StopDetailDto;
 import com.gianmdp03.cuando_llega_pro.domain.transit.dto.MapStopDto;
 import com.gianmdp03.cuando_llega_pro.domain.transit.dto.DirectionDto;
 import com.gianmdp03.cuando_llega_pro.domain.transit.dto.MapRouteDto;
+import com.gianmdp03.cuando_llega_pro.domain.transit.dto.NearbyStopDto;
 import com.gianmdp03.cuando_llega_pro.domain.transit.model.TransitStop;
 import com.gianmdp03.cuando_llega_pro.domain.transit.model.StopLineDirection;
 import com.gianmdp03.cuando_llega_pro.domain.transit.repository.TransitLineRepository;
@@ -28,6 +29,7 @@ import java.util.Map;
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class TransitService {
+    private static final double EARTH_RADIUS_METERS = 6_371_000;
 
     private final TransitLineRepository lineRepository;
     private final TransitStopRepository stopRepository;
@@ -60,6 +62,23 @@ public class TransitService {
         requireLine(internalLineCode);
         return stopRepository.findByLineCodeAndDirection(internalLineCode, direction).stream()
                 .map(this::toMapStop)
+                .toList();
+    }
+
+    public List<NearbyStopDto> getNearbyStops(double latitude, double longitude, int radiusMeters) {
+        double latitudeDelta = Math.toDegrees(radiusMeters / EARTH_RADIUS_METERS);
+        double longitudeDelta = latitudeDelta / Math.cos(Math.toRadians(latitude));
+
+        return stopRepository.findWithinBoundsWithDirections(
+                        latitude - latitudeDelta,
+                        latitude + latitudeDelta,
+                        longitude - longitudeDelta,
+                        longitude + longitudeDelta
+                ).stream()
+                .filter(stop -> stop.getLatitude() != null && stop.getLongitude() != null)
+                .map(stop -> toNearbyStop(latitude, longitude, stop))
+                .filter(stop -> stop.distanceMeters() <= radiusMeters)
+                .sorted(java.util.Comparator.comparingInt(NearbyStopDto::distanceMeters))
                 .toList();
     }
 
@@ -111,6 +130,23 @@ public class TransitService {
         );
     }
 
+    private NearbyStopDto toNearbyStop(double latitude, double longitude, TransitStop stop) {
+        return new NearbyStopDto(
+                stop.getIdentifier(),
+                stop.getDescription(),
+                stop.getLatitude(),
+                stop.getLongitude(),
+                (int) Math.round(distanceMeters(latitude, longitude, stop.getLatitude(), stop.getLongitude())),
+                stop.getDirections().stream()
+                        .sorted((left, right) -> {
+                            int byName = left.getLine().getName().compareTo(right.getLine().getName());
+                            return byName != 0 ? byName : left.getDirection().compareTo(right.getDirection());
+                        })
+                        .map(this::toLineDirection)
+                        .toList()
+        );
+    }
+
     private LineDirectionDto toLineDirection(StopLineDirection stopLineDirection) {
         return new LineDirectionDto(
                 stopLineDirection.getLine().getCode(),
@@ -118,6 +154,17 @@ public class TransitService {
                 stopLineDirection.getDirection(),
                 stopLineDirection.getExpandedDirection()
         );
+    }
+
+    private double distanceMeters(double startLatitude, double startLongitude, double endLatitude, double endLongitude) {
+        double latitudeDelta = Math.toRadians(endLatitude - startLatitude);
+        double longitudeDelta = Math.toRadians(endLongitude - startLongitude);
+        double startLatitudeRadians = Math.toRadians(startLatitude);
+        double endLatitudeRadians = Math.toRadians(endLatitude);
+        double a = Math.sin(latitudeDelta / 2) * Math.sin(latitudeDelta / 2)
+                + Math.cos(startLatitudeRadians) * Math.cos(endLatitudeRadians)
+                * Math.sin(longitudeDelta / 2) * Math.sin(longitudeDelta / 2);
+        return 2 * EARTH_RADIUS_METERS * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     }
 
 }

@@ -5,6 +5,7 @@ import com.gianmdp03.cuando_llega_pro.domain.transit.dto.StopDetailDto;
 import com.gianmdp03.cuando_llega_pro.domain.transit.dto.MapStopDto;
 import com.gianmdp03.cuando_llega_pro.domain.transit.dto.DirectionDto;
 import com.gianmdp03.cuando_llega_pro.domain.transit.dto.MapRouteDto;
+import com.gianmdp03.cuando_llega_pro.domain.transit.dto.NearbyStopDto;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -43,6 +44,18 @@ public class TransitController {
             @RequestParam String direction
     ) {
         return ResponseEntity.ok(transitService.getStops(lineCode, direction));
+    }
+
+    @GetMapping("/stops/nearby")
+    public ResponseEntity<List<NearbyStopDto>> getNearbyStops(
+            @RequestParam double latitude,
+            @RequestParam double longitude,
+            @RequestParam(defaultValue = "500") int radiusMeters
+    ) {
+        if (radiusMeters < 200 || radiusMeters > 800) {
+            throw new IllegalArgumentException("radiusMeters must be between 200 and 800");
+        }
+        return ResponseEntity.ok(transitService.getNearbyStops(latitude, longitude, radiusMeters));
     }
 
     @GetMapping("/lines/{lineCode}/routes")

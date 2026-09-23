@@ -34,4 +34,19 @@ public interface TransitStopRepository extends JpaRepository<TransitStop, String
             """)
     Optional<TransitStop> findByIdentifierWithDirections(@Param("identifier") String identifier);
 
+    @Query("""
+            select distinct stop
+            from TransitStop stop
+            left join fetch stop.directions stopTransitLine
+            left join fetch stopTransitLine.line
+            where stop.latitude between :south and :north
+              and stop.longitude between :west and :east
+            """)
+    List<TransitStop> findWithinBoundsWithDirections(
+            @Param("south") double south,
+            @Param("north") double north,
+            @Param("west") double west,
+            @Param("east") double east
+    );
+
 }
