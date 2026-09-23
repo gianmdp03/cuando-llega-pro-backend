@@ -15,6 +15,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.cache.Cache;
 import org.springframework.cache.CacheManager;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
@@ -273,10 +274,14 @@ public class TransitCatalogService {
             T upstreamData = fetcher.fetch();
             String serialized = objectMapper.writeValueAsString(upstreamData);
 
-            // Guardar L2 Postgres
-            saveL2(cacheKey, catalogType, serialized);
+            // Guardar L2 Postgres solo si la respuesta no es una lista vacía
+            // (evita persistir respuestas vacías que podrían enmascarar fallos upstream)
+            boolean isEmptyList = upstreamData instanceof List<?> list && list.isEmpty();
+            if (!isEmptyList) {
+                saveL2(cacheKey, catalogType, serialized);
+            }
 
-            // Guardar L1 Caffeine
+            // Guardar L1 Caffeine siempre (incluso listas vacías) para evitar cache stampede inmediato
             if (l1 != null) l1.put(cacheKey, upstreamData);
 
             return upstreamData;
@@ -288,6 +293,15 @@ public class TransitCatalogService {
 
     private boolean isExpired(TransitCatalogEntity entry) {
         return entry.getUpdatedAt() == null || entry.getUpdatedAt().isBefore(Instant.now().minus(catalogTtl));
+    }
+
+    @Scheduled(cron = "0 0 4 * * SUN") // Domingos a las 04:00 AM
+    public void purgeStaleCatalogEntries() {
+        Instant cutoff = Instant.now().minus(Duration.ofDays(7));
+        int deleted = catalogRepository.deleteStaleEntries(cutoff);
+        if (deleted > 0) {
+            log.info("Mantenimiento L2: Se purgaron {} entradas obsoletas de transit_catalog_entries", deleted);
+        }
     }
 
     public void saveL2(String cacheKey, String catalogType, String payload) {

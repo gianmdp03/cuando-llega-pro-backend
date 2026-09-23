@@ -28,6 +28,11 @@ public class MgpClientConfig {
     private long readTimeoutSeconds;
 
     @Bean
+    public RestClient.Builder restClientBuilder() {
+        return RestClient.builder();
+    }
+
+    @Bean
     public RestClient mgpProxyRestClient(MgpRequestPacer mgpRequestPacer) {
         HttpClient httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(connectTimeoutSeconds))

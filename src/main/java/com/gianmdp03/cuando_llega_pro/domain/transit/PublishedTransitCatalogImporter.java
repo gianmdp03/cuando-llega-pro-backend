@@ -3,19 +3,18 @@ package com.gianmdp03.cuando_llega_pro.domain.transit;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.gianmdp03.cuando_llega_pro.config.CaffeineCacheConfig;
-import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.cache.CacheManager;
+import org.springframework.http.ResponseEntity;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.RestClient;
 
-import java.net.URI;
 import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Duration;
@@ -26,7 +25,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /** Imports the public, versioned catalogue maintained by this project; it never contacts MGP. */
 @Component
 @ConditionalOnProperty(name = "app.transit.source.enabled", havingValue = "true", matchIfMissing = true)
-@RequiredArgsConstructor
 public class PublishedTransitCatalogImporter {
 
     private static final Logger log = LoggerFactory.getLogger(PublishedTransitCatalogImporter.class);
@@ -39,13 +37,37 @@ public class PublishedTransitCatalogImporter {
     private final ObjectMapper objectMapper;
     private final CacheManager cacheManager;
     private final AtomicBoolean importInProgress = new AtomicBoolean();
-    private final HttpClient httpClient = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(10))
-            .followRedirects(HttpClient.Redirect.NORMAL)
-            .build();
+    private final RestClient restClient;
 
     @Value("${app.transit.source.url:https://raw.githubusercontent.com/gianmdp03/paradas_mgp/main/paradas_mgp.json}")
     private String sourceUrl;
+
+    public PublishedTransitCatalogImporter(
+            TransitCatalogRepository catalogRepository,
+            TransitDataPersistenceService persistenceService,
+            ObjectMapper objectMapper,
+            CacheManager cacheManager,
+            RestClient.Builder restClientBuilder
+    ) {
+        this.catalogRepository = catalogRepository;
+        this.persistenceService = persistenceService;
+        this.objectMapper = objectMapper;
+        this.cacheManager = cacheManager;
+
+        JdkClientHttpRequestFactory factory = new JdkClientHttpRequestFactory(
+                HttpClient.newBuilder()
+                        .connectTimeout(Duration.ofSeconds(10))
+                        .followRedirects(HttpClient.Redirect.NORMAL)
+                        .build()
+        );
+        factory.setReadTimeout(Duration.ofSeconds(60));
+
+        this.restClient = restClientBuilder
+                .requestFactory(factory)
+                .defaultHeader("Accept", "application/json")
+                .defaultHeader("User-Agent", "cuando-llega-pro-catalog-importer")
+                .build();
+    }
 
     @Scheduled(
             fixedDelayString = "${app.transit.source.poll-interval-ms:21600000}",
@@ -63,10 +85,6 @@ public class PublishedTransitCatalogImporter {
         }
         try {
             return importPublishedCatalog();
-        } catch (InterruptedException exception) {
-            Thread.currentThread().interrupt();
-            log.warn("Se interrumpió la descarga del catálogo publicado");
-            return false;
         } catch (Exception exception) {
             // A failed remote download must never damage the last known good local catalogue.
             log.warn("No se pudo actualizar el catálogo publicado; se conserva la versión local", exception);
@@ -82,26 +100,23 @@ public class PublishedTransitCatalogImporter {
                 .orElse(objectMapper.createObjectNode());
         String etag = previousMetadata.path("etag").asText(null);
 
-        HttpRequest.Builder request = HttpRequest.newBuilder(URI.create(sourceUrl))
-                .GET()
-                .timeout(Duration.ofSeconds(60))
-                .header("Accept", "application/json")
-                .header("User-Agent", "cuando-llega-pro-catalog-importer");
+        RestClient.RequestHeadersSpec<?> requestSpec = restClient.get().uri(sourceUrl);
         if (etag != null && !etag.isBlank()) {
-            request.header("If-None-Match", etag);
+            requestSpec = requestSpec.header("If-None-Match", etag);
         }
 
-        HttpResponse<String> response = httpClient.send(request.build(), HttpResponse.BodyHandlers.ofString());
-        if (response.statusCode() == 304) {
+        ResponseEntity<String> response = requestSpec.retrieve().toEntity(String.class);
+
+        if (response.getStatusCode().value() == 304) {
             log.info("El catálogo publicado no cambió (ETag)");
             return false;
         }
-        if (response.statusCode() < 200 || response.statusCode() >= 300) {
-            throw new IllegalStateException("GitHub respondió HTTP " + response.statusCode());
+        if (!response.getStatusCode().is2xxSuccessful()) {
+            throw new IllegalStateException("GitHub respondió HTTP " + response.getStatusCode().value());
         }
 
-        String body = response.body();
-        String sha256 = sha256(body);
+        String body = response.getBody();
+        String sha256 = sha256(body == null ? "" : body);
         if (sha256.equals(previousMetadata.path("sha256").asText())) {
             saveMetadata(response, sha256);
             log.info("El catálogo publicado no cambió (hash)");
@@ -135,8 +150,8 @@ public class PublishedTransitCatalogImporter {
         }
     }
 
-    private void saveMetadata(HttpResponse<String> response, String sha256) throws Exception {
-        String etag = response.headers().firstValue("ETag").orElse(null);
+    private void saveMetadata(ResponseEntity<String> response, String sha256) throws Exception {
+        String etag = response.getHeaders().getFirst("ETag");
         String payload = objectMapper.writeValueAsString(Map.of(
                 "etag", etag == null ? "" : etag,
                 "sha256", sha256
