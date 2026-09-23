@@ -73,8 +73,7 @@ class PresetControllerTest {
                 "Home",
                 "home-icon",
                 "#FF5500",
-                new PresetConfig.ScheduleRange("08:00", "09:00", Set.of("MON", "TUE")),
-                new PresetConfig.NotificationSettings(true, 5, true)
+                null
         );
 
         sampleDetailDTO = new PresetDetailDTO(
@@ -152,7 +151,6 @@ class PresetControllerTest {
                     .andExpect(jsonPath("$.identificadorParada", is("P-100")))
                     .andExpect(jsonPath("$.bandera", is("A")))
                     .andExpect(jsonPath("$.config.alias", is("Home")))
-                    .andExpect(jsonPath("$.config.notificationSettings.notifyArrival", is(true)))
                     .andExpect(jsonPath("$.createdAt", notNullValue()));
 
             verify(presetService).getPresetByIdForUser(10L, "tester@example.com");

@@ -65,8 +65,7 @@ class DashboardControllerTest {
                 "Work",
                 "bus-icon",
                 "#00AAFF",
-                new PresetConfig.ScheduleRange("07:00", "08:30", Set.of("MON", "TUE", "WED")),
-                new PresetConfig.NotificationSettings(true, 5, true)
+                null
         );
 
         ArrivalResponseDTO sampleTelemetry = new ArrivalResponseDTO(

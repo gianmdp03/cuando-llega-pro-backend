@@ -33,4 +33,5 @@ public interface TransitStopRepository extends JpaRepository<TransitStop, String
             where stop.identifier = :identifier
             """)
     Optional<TransitStop> findByIdentifierWithDirections(@Param("identifier") String identifier);
+
 }

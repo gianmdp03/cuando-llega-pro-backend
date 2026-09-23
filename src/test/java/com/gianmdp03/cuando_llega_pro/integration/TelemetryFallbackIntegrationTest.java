@@ -139,8 +139,7 @@ class TelemetryFallbackIntegrationTest {
                 "Home to Work",
                 "bus-route",
                 "#0088CC",
-                new PresetConfig.ScheduleRange("07:30", "09:00", Set.of("MON", "TUE", "WED", "THU", "FRI")),
-                new PresetConfig.NotificationSettings(true, 5, true)
+                null
         );
 
         Preset preset = new Preset(commuter, LINE_511, STOP_100, "A", presetConfig);

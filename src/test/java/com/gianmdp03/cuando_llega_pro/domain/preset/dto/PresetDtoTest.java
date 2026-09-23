@@ -36,7 +36,7 @@ class PresetDtoTest {
         @Test
         @DisplayName("Valid PresetRequestDTO passes all validations")
         void validRequestPassesValidation() {
-            PresetConfig config = new PresetConfig("Work", "work", "blue", null, null);
+            PresetConfig config = new PresetConfig("Work", "work", "blue", null);
             PresetRequestDTO dto = new PresetRequestDTO("511", "100", "A", config);
 
             Set<ConstraintViolation<PresetRequestDTO>> violations = validator.validate(dto);
@@ -47,7 +47,7 @@ class PresetDtoTest {
         @Test
         @DisplayName("Blank codigoLinea fails validation")
         void blankCodigoLineaFailsValidation() {
-            PresetConfig config = new PresetConfig("Work", "work", "blue", null, null);
+            PresetConfig config = new PresetConfig("Work", "work", "blue", null);
             PresetRequestDTO dto = new PresetRequestDTO("", "100", "A", config);
 
             Set<ConstraintViolation<PresetRequestDTO>> violations = validator.validate(dto);
@@ -59,7 +59,7 @@ class PresetDtoTest {
         @Test
         @DisplayName("Blank identificadorParada fails validation")
         void blankIdentificadorParadaFailsValidation() {
-            PresetConfig config = new PresetConfig("Work", "work", "blue", null, null);
+            PresetConfig config = new PresetConfig("Work", "work", "blue", null);
             PresetRequestDTO dto = new PresetRequestDTO("511", "  ", "A", config);
 
             Set<ConstraintViolation<PresetRequestDTO>> violations = validator.validate(dto);
@@ -90,7 +90,7 @@ class PresetDtoTest {
             User user = new User("user@test.com", "pass", "User Test");
             ReflectionTestUtils.setField(user, "id", 42L);
 
-            PresetConfig config = new PresetConfig("Home", "home", "#FF0000", null, null);
+            PresetConfig config = new PresetConfig("Home", "home", "#FF0000", null);
             Preset preset = new Preset(user, "522", "200", "B", config);
             ReflectionTestUtils.setField(preset, "id", 7L);
             Instant now = Instant.now();
@@ -130,7 +130,7 @@ class PresetDtoTest {
         @Test
         @DisplayName("fromEntity flattens alias, icon, color from config")
         void fromEntityFlattensConfigFields() {
-            PresetConfig config = new PresetConfig("Office Stop", "office", "emerald", null, null);
+            PresetConfig config = new PresetConfig("Office Stop", "office", "emerald", null);
             Preset preset = new Preset("533", "300", "C");
             preset.setConfig(config);
             ReflectionTestUtils.setField(preset, "id", 12L);

@@ -80,8 +80,7 @@ class PresetControllerSliceTest {
                 "Office",
                 "briefcase",
                 "#336699",
-                new PresetConfig.ScheduleRange("08:30", "17:30", Set.of("MON", "WED", "FRI")),
-                new PresetConfig.NotificationSettings(true, 10, true)
+                null
         );
 
         sampleDetailDTO = new PresetDetailDTO(
@@ -169,11 +168,6 @@ class PresetControllerSliceTest {
                     .andExpect(jsonPath("$.config.alias", is("Office")))
                     .andExpect(jsonPath("$.config.icon", is("briefcase")))
                     .andExpect(jsonPath("$.config.color", is("#336699")))
-                    .andExpect(jsonPath("$.config.activeSchedule.startTime", is("08:30")))
-                    .andExpect(jsonPath("$.config.activeSchedule.endTime", is("17:30")))
-                    .andExpect(jsonPath("$.config.notificationSettings.notifyArrival", is(true)))
-                    .andExpect(jsonPath("$.config.notificationSettings.alertMinutesBefore", is(10)))
-                    .andExpect(jsonPath("$.config.notificationSettings.soundEnabled", is(true)))
                     .andExpect(jsonPath("$.createdAt", notNullValue()));
 
             verify(presetService).getPresetByIdForUser(42L, TEST_USER);

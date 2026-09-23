@@ -129,7 +129,7 @@ Respuesta `200`: misma forma que el registro.
 
 ## 4. Presets del usuario
 
-Todos requieren JWT. Un preset guarda una combinación línea, parada, sentido y configuración visual/notificaciones. Los nombres de campos heredados están en español y se deben enviar exactamente así.
+Todos requieren JWT. Un preset guarda una combinación de línea, parada, sentido y configuración visual.
 
 ### Modelo `PresetConfig`
 
@@ -138,20 +138,11 @@ Todos requieren JWT. Un preset guarda una combinación línea, parada, sentido y
   "alias": "Ir a casa",
   "icon": "bus",
   "color": "#2E7D32",
-  "activeSchedule": {
-    "startTime": "07:00",
-    "endTime": "22:00",
-    "activeDays": ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"]
-  },
-  "notificationSettings": {
-    "notifyArrival": true,
-    "alertMinutesBefore": 5,
-    "soundEnabled": true
-  }
+  "location": "Casa"
 }
 ```
 
-`activeSchedule` y `notificationSettings` pueden ser `null` si el producto lo permite; `config` completo es obligatorio al crear/editar.
+`location` puede ser `null`; `config` completo es obligatorio al crear/editar.
 
 ### Rutas
 
@@ -174,8 +165,7 @@ Body de creación/edición:
     "alias": "Ir a casa",
     "icon": "bus",
     "color": "#2E7D32",
-    "activeSchedule": null,
-    "notificationSettings": null
+    "location": "Casa"
   }
 }
 ```

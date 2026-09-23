@@ -117,8 +117,7 @@ class PresetTest {
                     "Home Stop",
                     "home",
                     "#0055FF",
-                    new PresetConfig.ScheduleRange("08:00", "20:00", Set.of("MON", "TUE")),
-                    new PresetConfig.NotificationSettings(true, 5, true)
+                    null
             );
 
             Preset preset = new Preset(user, "511", "001", "A", config);

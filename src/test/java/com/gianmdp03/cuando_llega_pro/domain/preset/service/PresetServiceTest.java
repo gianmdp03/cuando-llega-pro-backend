@@ -57,8 +57,7 @@ class PresetServiceTest {
                 "Work",
                 "bus-icon",
                 "#00AAFF",
-                new PresetConfig.ScheduleRange("07:00", "08:30", Set.of("MON", "TUE", "WED")),
-                new PresetConfig.NotificationSettings(true, 5, true)
+                null
         );
 
         samplePreset = new Preset(sampleUser, "501", "P-100", "A", sampleConfig);
@@ -248,8 +247,7 @@ class PresetServiceTest {
                     "Gym",
                     "fitness-icon",
                     "#00FF00",
-                    new PresetConfig.ScheduleRange("18:00", "19:30", Set.of("THU", "FRI")),
-                    new PresetConfig.NotificationSettings(false, 0, false)
+                    null
             );
             PresetRequestDTO request = new PresetRequestDTO("505", "P-555", "Express", updatedConfig);
 

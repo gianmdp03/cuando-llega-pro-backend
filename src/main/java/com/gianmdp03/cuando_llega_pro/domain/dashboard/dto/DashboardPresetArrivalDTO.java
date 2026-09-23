@@ -10,7 +10,7 @@ import com.gianmdp03.cuando_llega_pro.domain.telemetry.dto.ArrivalResponseDTO;
  * @param codigoLinea         transit line code
  * @param identificadorParada bus stop identifier
  * @param bandera             route branch / variant
- * @param config              preset visual and notification configuration
+ * @param config              preset visual configuration
  * @param telemetry           real-time or extrapolated arrival telemetry
  * @param error               safe user-facing reason when telemetry is unavailable
  */
