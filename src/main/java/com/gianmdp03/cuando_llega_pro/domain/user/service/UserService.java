@@ -3,6 +3,7 @@ package com.gianmdp03.cuando_llega_pro.domain.user.service;
 import com.gianmdp03.cuando_llega_pro.domain.user.User;
 import com.gianmdp03.cuando_llega_pro.domain.user.UserRepository;
 import com.gianmdp03.cuando_llega_pro.domain.user.dto.AuthResponseDTO;
+import com.gianmdp03.cuando_llega_pro.domain.user.dto.AdminCreateUserRequestDTO;
 import com.gianmdp03.cuando_llega_pro.domain.user.dto.LoginRequestDTO;
 import com.gianmdp03.cuando_llega_pro.domain.user.dto.UserDetailDTO;
 import com.gianmdp03.cuando_llega_pro.domain.user.dto.UserRequestDTO;
@@ -75,6 +76,25 @@ public class UserService {
                 jwtTokenProvider.getExpirationMs(),
                 UserDetailDTO.fromEntity(savedUser)
         );
+    }
+
+    @Transactional
+    public UserDetailDTO createUserByAdmin(AdminCreateUserRequestDTO request) {
+        if (userRepository.existsByEmail(request.email())) {
+            throw new BadRequestException("Email is already registered");
+        }
+
+        String role = request.role() == null || request.role().isBlank()
+                ? DEFAULT_ROLE
+                : request.role();
+        User savedUser = userRepository.save(new User(
+                request.email(),
+                passwordEncoder.encode(request.password()),
+                request.fullName(),
+                role
+        ));
+
+        return UserDetailDTO.fromEntity(savedUser);
     }
 
     /**

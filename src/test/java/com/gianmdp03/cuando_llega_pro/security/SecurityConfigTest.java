@@ -112,15 +112,15 @@ class SecurityConfigTest {
     }
 
     @Test
-    @DisplayName("Should permit access to /api/v1/auth/** without authentication")
-    void permitAllAuthEndpoints() throws Exception {
+    @DisplayName("Should require authentication for auth endpoints other than login")
+    void protectsNonLoginAuthEndpoints() throws Exception {
         MockMvc mockMvc = MockMvcBuilders
                 .webAppContextSetup(context)
                 .apply(springSecurity())
                 .build();
 
         mockMvc.perform(get("/api/v1/auth/ping"))
-                .andExpect(status().isOk());
+                .andExpect(status().isUnauthorized());
     }
 
     @Test

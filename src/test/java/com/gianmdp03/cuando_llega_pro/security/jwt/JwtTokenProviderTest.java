@@ -52,13 +52,12 @@ class JwtTokenProviderTest {
     }
 
     @Test
-    @DisplayName("Should reject expired token")
-    void validateExpiredToken() {
-        // Create token provider with negative expiration time
-        JwtTokenProvider expiredTokenProvider = new JwtTokenProvider(BASE64_SECRET, -1000);
-        String expiredToken = expiredTokenProvider.generateToken("user@example.com", 1L, "ROLE_USER");
+    @DisplayName("Should generate a token without expiration when configured expiration is non-positive")
+    void generateTokenWithoutExpiration() {
+        JwtTokenProvider nonExpiringTokenProvider = new JwtTokenProvider(BASE64_SECRET, -1);
+        String token = nonExpiringTokenProvider.generateToken("user@example.com", 1L, "ROLE_USER");
 
-        assertThat(tokenProvider.validateToken(expiredToken)).isFalse();
+        assertThat(nonExpiringTokenProvider.validateToken(token)).isTrue();
     }
 
     @Test

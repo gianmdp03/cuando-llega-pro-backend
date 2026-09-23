@@ -2,10 +2,8 @@ package com.gianmdp03.cuando_llega_pro.domain.user.controller;
 
 import com.gianmdp03.cuando_llega_pro.domain.user.dto.AuthResponseDTO;
 import com.gianmdp03.cuando_llega_pro.domain.user.dto.LoginRequestDTO;
-import com.gianmdp03.cuando_llega_pro.domain.user.dto.UserRequestDTO;
 import com.gianmdp03.cuando_llega_pro.domain.user.service.UserService;
 import jakarta.validation.Valid;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -24,18 +22,6 @@ public class AuthController {
 
     public AuthController(UserService userService) {
         this.userService = userService;
-    }
-
-    /**
-     * Registers a new user account.
-     *
-     * @param request registration details
-     * @return 201 Created with AuthResponseDTO containing token and user information
-     */
-    @PostMapping("/register")
-    public ResponseEntity<AuthResponseDTO> register(@Valid @RequestBody UserRequestDTO request) {
-        AuthResponseDTO response = userService.register(request);
-        return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
     /**

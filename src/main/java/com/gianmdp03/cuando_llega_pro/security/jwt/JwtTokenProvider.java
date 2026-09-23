@@ -78,16 +78,18 @@ public class JwtTokenProvider {
      */
     public String generateToken(String email, Long userId, String role) {
         Date now = new Date();
-        Date expiryDate = new Date(now.getTime() + expirationMs);
-
-        return Jwts.builder()
+        var builder = Jwts.builder()
                 .subject(email)
                 .claim("userId", userId)
                 .claim("role", role)
                 .issuedAt(now)
-                .expiration(expiryDate)
-                .signWith(key)
-                .compact();
+                .signWith(key);
+
+        if (expirationMs > 0) {
+            builder.expiration(new Date(now.getTime() + expirationMs));
+        }
+
+        return builder.compact();
     }
 
     /**
