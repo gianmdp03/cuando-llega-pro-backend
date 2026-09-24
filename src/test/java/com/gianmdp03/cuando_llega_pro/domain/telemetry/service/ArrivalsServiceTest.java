@@ -7,6 +7,7 @@ import com.gianmdp03.cuando_llega_pro.domain.telemetry.dto.ArrivalResponseDTO;
 import com.gianmdp03.cuando_llega_pro.domain.telemetry.dto.BusArrivalItemDTO;
 import com.gianmdp03.cuando_llega_pro.domain.telemetry.model.TelemetryStatus;
 import com.gianmdp03.cuando_llega_pro.exception.UpstreamServiceException;
+import com.gianmdp03.cuando_llega_pro.exception.TelemetryRefreshRequiredException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -110,6 +111,29 @@ class ArrivalsServiceTest {
             assertThat(result).isSameAs(cachedResponse);
             verify(mgpProxyClient, never()).getArrivals(any(), any(), any(), any());
         }
+    }
+
+    @Test
+    @DisplayName("Expired or absent client snapshot requires a new MGP client refresh")
+    void missingSnapshotWithoutProxy_requiresClientRefresh() {
+        arrivalsService = new ArrivalsService(null, objectMapper, extrapolationEngine, cacheManager);
+
+        assertThatThrownBy(() -> arrivalsService.getArrivals(LINE_511, STOP_1024))
+                .isInstanceOf(TelemetryRefreshRequiredException.class);
+    }
+
+    @Test
+    @DisplayName("Client LIVE snapshot is stored in the shared 15-second arrivals cache")
+    void refreshFromClient_storesLiveSnapshot() {
+        BusArrivalItemDTO bus = new BusArrivalItemDTO(LINE_511, "A", 6, 1500, "6 min", "012", true, TelemetryStatus.LIVE);
+        ArrivalResponseDTO snapshot = new ArrivalResponseDTO(LINE_511, STOP_1024, "A", TelemetryStatus.LIVE,
+                Instant.now(), 0L, List.of(bus));
+        when(cacheManager.getCache(CaffeineCacheConfig.ARRIVALS_CACHE)).thenReturn(cache);
+
+        arrivalsService.refreshFromClient(snapshot);
+
+        verify(cache).put(eq(CACHE_KEY), any(ArrivalResponseDTO.class));
+        assertThat(arrivalsService.getLastKnownTelemetryStore()).containsKey(CACHE_KEY);
     }
 
     @Nested

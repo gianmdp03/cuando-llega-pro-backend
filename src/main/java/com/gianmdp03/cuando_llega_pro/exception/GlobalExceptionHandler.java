@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import java.time.Instant;
+import java.net.URI;
 import java.util.List;
 
 /**
@@ -61,6 +62,28 @@ public class GlobalExceptionHandler {
                 "Upstream Proxy Failure",
                 ex.getMessage()
         );
+    }
+
+    @ExceptionHandler(CatalogRefreshRequiredException.class)
+    public ProblemDetail handleCatalogRefreshRequired(CatalogRefreshRequiredException ex) {
+        ProblemDetail problem = createProblemDetail(
+                HttpStatus.CONFLICT,
+                "MGP Client Refresh Required",
+                ex.getMessage()
+        );
+        problem.setType(URI.create("urn:cuando-llega:mgp-client-refresh-required"));
+        return problem;
+    }
+
+    @ExceptionHandler(TelemetryRefreshRequiredException.class)
+    public ProblemDetail handleTelemetryRefreshRequired(TelemetryRefreshRequiredException ex) {
+        ProblemDetail problem = createProblemDetail(
+                HttpStatus.CONFLICT,
+                "MGP Client Refresh Required",
+                ex.getMessage()
+        );
+        problem.setType(URI.create("urn:cuando-llega:mgp-client-refresh-required"));
+        return problem;
     }
 
     @ExceptionHandler({BadRequestException.class, IllegalArgumentException.class})

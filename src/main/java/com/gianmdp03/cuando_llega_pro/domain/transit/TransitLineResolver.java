@@ -58,7 +58,7 @@ public class TransitLineResolver {
             Map.entry("BATAN", "344")
     );
 
-    public TransitLineResolver(MgpProxyClient mgpProxyClient, ObjectMapper objectMapper) {
+    public TransitLineResolver(@org.springframework.beans.factory.annotation.Autowired(required = false) MgpProxyClient mgpProxyClient, ObjectMapper objectMapper) {
         this.mgpProxyClient = mgpProxyClient;
         this.objectMapper = objectMapper != null ? objectMapper : new ObjectMapper();
         // Precargar con fallback estático inmediatamente
@@ -74,7 +74,10 @@ public class TransitLineResolver {
 
     @EventListener(ApplicationReadyEvent.class)
     public void warmupLineMappings() {
-        if (mgpProxyClient == null) return;
+        if (mgpProxyClient == null) {
+            log.info("mgpProxyClient no disponible; operando exclusivamente con HAR_FALLBACK estático.");
+            return;
+        }
         try {
             log.info("Iniciando warmup de líneas contra upstream municipal...");
             String rawJson = mgpProxyClient.getLines(UUID.randomUUID().toString(), ACCION_LINEAS);

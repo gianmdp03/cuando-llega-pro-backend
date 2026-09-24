@@ -9,7 +9,9 @@ import com.gianmdp03.cuando_llega_pro.domain.transit.dto.TransitIntersectionDTO;
 import com.gianmdp03.cuando_llega_pro.domain.transit.dto.TransitLineDTO;
 import com.gianmdp03.cuando_llega_pro.domain.transit.dto.TransitStopWithFlagDTO;
 import com.gianmdp03.cuando_llega_pro.domain.transit.dto.TransitStreetDTO;
+import com.gianmdp03.cuando_llega_pro.domain.transit.dto.CatalogRefreshRequest;
 import com.gianmdp03.cuando_llega_pro.exception.UpstreamServiceException;
+import com.gianmdp03.cuando_llega_pro.exception.CatalogRefreshRequiredException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -49,7 +51,7 @@ public class TransitCatalogService {
 
     @Autowired
     public TransitCatalogService(
-            MgpProxyClient mgpProxyClient,
+            @Autowired(required = false) MgpProxyClient mgpProxyClient,
             TransitCatalogRepository catalogRepository,
             CacheManager cacheManager,
             ObjectMapper objectMapper,
@@ -196,6 +198,56 @@ public class TransitCatalogService {
         return transitLineResolver;
     }
 
+    /** Stores only normalized list payloads; clients cannot write arbitrary cache shapes. */
+    public void refreshFromClient(CatalogRefreshRequest request) {
+        if (request == null || request.cacheKey() == null || request.catalogType() == null || request.payload() == null) {
+            log.warn("Renovación de catálogo rechazada: faltan cacheKey, catalogType o payload");
+            throw new IllegalArgumentException("Renovación de catálogo incompleta");
+        }
+        if (!List.of("LINES", "STREETS", "INTERSECTIONS", "STOPS_FLAG").contains(request.catalogType())
+                || !matchesCatalogKey(request.cacheKey(), request.catalogType())) {
+            log.warn("Renovación de catálogo rechazada: cacheKey={} catalogType={}", request.cacheKey(), request.catalogType());
+            throw new IllegalArgumentException("Clave o tipo de catálogo inválido");
+        }
+        try {
+            // Deserialize to the DTO selected by the declared type, then serialize it
+            // again. This prevents arbitrary JSON objects/fields being persisted under
+            // a catalog key even by an authenticated client.
+            JsonNode payload = objectMapper.readTree(request.payload());
+            if (payload == null || !payload.isArray()) throw new IllegalArgumentException("El catálogo debe ser un arreglo JSON");
+            String normalizedPayload = switch (request.catalogType()) {
+                case "LINES" -> objectMapper.writeValueAsString(objectMapper.readValue(request.payload(), new TypeReference<List<TransitLineDTO>>() {}));
+                case "STREETS" -> objectMapper.writeValueAsString(objectMapper.readValue(request.payload(), new TypeReference<List<TransitStreetDTO>>() {}));
+                case "INTERSECTIONS" -> objectMapper.writeValueAsString(objectMapper.readValue(request.payload(), new TypeReference<List<TransitIntersectionDTO>>() {}));
+                case "STOPS_FLAG" -> objectMapper.writeValueAsString(objectMapper.readValue(request.payload(), new TypeReference<List<TransitStopWithFlagDTO>>() {}));
+                default -> throw new IllegalArgumentException("Tipo de catálogo inválido");
+            };
+            saveL2(request.cacheKey(), request.catalogType(), normalizedPayload);
+            Cache l1 = cacheManager != null ? cacheManager.getCache(CaffeineCacheConfig.TRANSIT_CATALOG_CACHE) : null;
+            if (l1 != null) l1.evict(request.cacheKey());
+            log.info("Renovación de catálogo recibida y guardada: cacheKey={} catalogType={} entries={}",
+                    request.cacheKey(), request.catalogType(), payload.size());
+        } catch (IllegalArgumentException ex) {
+            log.warn("Renovación de catálogo rechazada: cacheKey={} catalogType={} motivo={}",
+                    request.cacheKey(), request.catalogType(), ex.getMessage());
+            throw ex;
+        } catch (Exception ex) {
+            log.warn("Renovación de catálogo inválida: cacheKey={} catalogType={} motivo={}",
+                    request.cacheKey(), request.catalogType(), ex.getMessage());
+            throw new IllegalArgumentException("Payload de catálogo inválido", ex);
+        }
+    }
+
+    private boolean matchesCatalogKey(String cacheKey, String catalogType) {
+        return switch (catalogType) {
+            case "LINES" -> CACHE_KEY_LINES_ALL.equals(cacheKey);
+            case "STREETS" -> cacheKey.matches("streets:[0-9]+");
+            case "INTERSECTIONS" -> cacheKey.matches("intersections:[0-9]+:[0-9]+");
+            case "STOPS_FLAG" -> cacheKey.matches("stops_flag:[0-9]+:[0-9]+:[0-9]+");
+            default -> false;
+        };
+    }
+
     @FunctionalInterface
     private interface UpstreamFetcher<T> {
         T fetch() throws Exception;
@@ -205,6 +257,9 @@ public class TransitCatalogService {
         T cached = getCachedValue(cacheKey, typeRef);
         if (cached != null) {
             return cached;
+        }
+        if (mgpProxyClient == null) {
+            throw new CatalogRefreshRequiredException(cacheKey);
         }
 
         CompletableFuture<Object> mine = new CompletableFuture<>();
@@ -223,7 +278,7 @@ public class TransitCatalogService {
         try {
             T value = getCachedValue(cacheKey, typeRef);
             if (value == null) {
-                value = fetchAndStore(cacheKey, catalogType, fetcher);
+                value = fetchAndStore(cacheKey, catalogType, typeRef, fetcher);
             }
             mine.complete(value);
             return value;
@@ -249,7 +304,7 @@ public class TransitCatalogService {
             }
         }
 
-        // 2. Check PostgreSQL L2 only while its entry remains fresh.
+        // 2. Check PostgreSQL L2 (accept stale when upstream client is unavailable)
         if (catalogRepository != null) {
             var l2Entity = catalogRepository.findById(cacheKey);
             if (l2Entity.isPresent() && !isExpired(l2Entity.get())) {
@@ -266,8 +321,18 @@ public class TransitCatalogService {
         return null;
     }
 
-    private <T> T fetchAndStore(String cacheKey, String catalogType, UpstreamFetcher<T> fetcher) {
+    private <T> T fetchAndStore(String cacheKey, String catalogType, TypeReference<T> typeRef, UpstreamFetcher<T> fetcher) {
         Cache l1 = cacheManager != null ? cacheManager.getCache(CaffeineCacheConfig.TRANSIT_CATALOG_CACHE) : null;
+        if (mgpProxyClient == null) {
+            log.info("mgpProxyClient no disponible para key {}. Verificando fallback local en Postgres...", cacheKey);
+            T fallback = getPostgresFallback(cacheKey, typeRef);
+            if (fallback != null) {
+                if (l1 != null) l1.put(cacheKey, fallback);
+                return fallback;
+            }
+            return (T) List.of();
+        }
+
         // 3. Fetch Upstream L3
         try {
             log.info("Cache Miss L1/L2 para key: {}. Consultando upstream municipal...", cacheKey);
@@ -286,9 +351,28 @@ public class TransitCatalogService {
 
             return upstreamData;
         } catch (Exception e) {
-            log.error("Error consultando catálogo upstream para key {}: {}", cacheKey, e.getMessage());
-            throw new UpstreamServiceException("Fallo al obtener datos de catálogo para " + cacheKey, e);
+            log.warn("Fallo o indisponibilidad upstream para key {}: {}. Aplicando fallback local.", cacheKey, e.getMessage());
+            T fallback = getPostgresFallback(cacheKey, typeRef);
+            if (fallback != null) {
+                if (l1 != null) l1.put(cacheKey, fallback);
+                return fallback;
+            }
+            return (T) List.of();
         }
+    }
+
+    private <T> T getPostgresFallback(String cacheKey, TypeReference<T> typeRef) {
+        if (catalogRepository != null) {
+            var l2Entity = catalogRepository.findById(cacheKey);
+            if (l2Entity.isPresent()) {
+                try {
+                    return objectMapper.readValue(l2Entity.get().getPayload(), typeRef);
+                } catch (Exception ex) {
+                    log.warn("No se pudo deserializar L2 fallback para {}: {}", cacheKey, ex.getMessage());
+                }
+            }
+        }
+        return null;
     }
 
     private boolean isExpired(TransitCatalogEntity entry) {

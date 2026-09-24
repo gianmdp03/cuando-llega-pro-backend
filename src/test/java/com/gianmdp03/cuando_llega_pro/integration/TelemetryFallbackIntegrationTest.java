@@ -116,6 +116,9 @@ class TelemetryFallbackIntegrationTest {
     @MockitoBean
     private PresetRepository presetRepository;
 
+    @MockitoBean
+    private com.gianmdp03.cuando_llega_pro.domain.transit.StopLocationRepository stopLocationRepository;
+
     @BeforeEach
     void setUp() {
         // Reset Caffeine L1 cache and internal in-memory fallback store before each test run
@@ -162,25 +165,24 @@ class TelemetryFallbackIntegrationTest {
                 .thenReturn(upstreamSuccessJson);
 
         // Make initial request as commuter@example.com
-        mockMvc.perform(get("/api/v1/me/dashboard")
+        mockMvc.perform(get("/api/v1/telemetry/arrivals")
+                        .param("lineCode", LINE_511)
+                        .param("stopId", STOP_100)
                         .with(user(COMMUTER_EMAIL))
                         .accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.userEmail", is(COMMUTER_EMAIL)))
-                .andExpect(jsonPath("$.totalPresets", is(1)))
-                .andExpect(jsonPath("$.presets[0].codigoLinea", is(LINE_511)))
-                .andExpect(jsonPath("$.presets[0].identificadorParada", is(STOP_100)))
-                .andExpect(jsonPath("$.presets[0].bandera", is("A")))
-                .andExpect(jsonPath("$.presets[0].telemetry.status", is("LIVE")))
-                .andExpect(jsonPath("$.presets[0].telemetry.deltaMinutes", is(0)))
-                .andExpect(jsonPath("$.presets[0].telemetry.arrivals", hasSize(1)))
-                .andExpect(jsonPath("$.presets[0].telemetry.arrivals[0].lineCode", is(LINE_511)))
-                .andExpect(jsonPath("$.presets[0].telemetry.arrivals[0].branch", is("A")))
-                .andExpect(jsonPath("$.presets[0].telemetry.arrivals[0].remainingMinutes", is(15)))
-                .andExpect(jsonPath("$.presets[0].telemetry.arrivals[0].distanceMeters", is(3200)))
-                .andExpect(jsonPath("$.presets[0].telemetry.arrivals[0].vehicleUnit", is("42")))
-                .andExpect(jsonPath("$.presets[0].telemetry.arrivals[0].accessible", is(true)))
-                .andExpect(jsonPath("$.presets[0].telemetry.arrivals[0].status", is("LIVE")));
+                .andExpect(jsonPath("$.lineCode", is(LINE_511)))
+                .andExpect(jsonPath("$.stopId", is(STOP_100)))
+                .andExpect(jsonPath("$.status", is("LIVE")))
+                .andExpect(jsonPath("$.deltaMinutes", is(0)))
+                .andExpect(jsonPath("$.arrivals", hasSize(1)))
+                .andExpect(jsonPath("$.arrivals[0].lineCode", is(LINE_511)))
+                .andExpect(jsonPath("$.arrivals[0].branch", is("A")))
+                .andExpect(jsonPath("$.arrivals[0].remainingMinutes", is(15)))
+                .andExpect(jsonPath("$.arrivals[0].distanceMeters", is(3200)))
+                .andExpect(jsonPath("$.arrivals[0].vehicleUnit", is("42")))
+                .andExpect(jsonPath("$.arrivals[0].accessible", is(true)))
+                .andExpect(jsonPath("$.arrivals[0].status", is("LIVE")));
 
         // --- STEP 2: Clear or evict Caffeine "arrivals" cache ---
         Objects.requireNonNull(cacheManager.getCache(CaffeineCacheConfig.ARRIVALS_CACHE)).clear();
@@ -204,26 +206,25 @@ class TelemetryFallbackIntegrationTest {
         );
         arrivalsService.getLastKnownTelemetryStore().put(CACHE_KEY, agedSnapshot);
 
-        // --- STEP 4: Make request GET /api/v1/me/dashboard again ---
+        // --- STEP 4: Make request GET /api/v1/telemetry/arrivals again ---
         // --- STEP 5: Verify that despite upstream failure, extrapolation engine serves ESTIMATED_FALLBACK with decayed minutes ---
-        mockMvc.perform(get("/api/v1/me/dashboard")
+        mockMvc.perform(get("/api/v1/telemetry/arrivals")
+                        .param("lineCode", LINE_511)
+                        .param("stopId", STOP_100)
                         .with(user(COMMUTER_EMAIL))
                         .accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.userEmail", is(COMMUTER_EMAIL)))
-                .andExpect(jsonPath("$.totalPresets", is(1)))
-                .andExpect(jsonPath("$.presets[0].codigoLinea", is(LINE_511)))
-                .andExpect(jsonPath("$.presets[0].identificadorParada", is(STOP_100)))
-                .andExpect(jsonPath("$.presets[0].bandera", is("A")))
-                .andExpect(jsonPath("$.presets[0].telemetry.status", is("ESTIMATED_FALLBACK")))
-                .andExpect(jsonPath("$.presets[0].telemetry.deltaMinutes", is(5)))
-                .andExpect(jsonPath("$.presets[0].telemetry.arrivals", hasSize(1)))
-                .andExpect(jsonPath("$.presets[0].telemetry.arrivals[0].lineCode", is(LINE_511)))
-                .andExpect(jsonPath("$.presets[0].telemetry.arrivals[0].branch", is("A")))
-                .andExpect(jsonPath("$.presets[0].telemetry.arrivals[0].remainingMinutes", is(10))) // Decayed: 15 - 5 = 10
-                .andExpect(jsonPath("$.presets[0].telemetry.arrivals[0].distanceMeters", is(3200)))
-                .andExpect(jsonPath("$.presets[0].telemetry.arrivals[0].vehicleUnit", is("42")))
-                .andExpect(jsonPath("$.presets[0].telemetry.arrivals[0].status", is("ESTIMATED_FALLBACK")));
+                .andExpect(jsonPath("$.lineCode", is(LINE_511)))
+                .andExpect(jsonPath("$.stopId", is(STOP_100)))
+                .andExpect(jsonPath("$.status", is("ESTIMATED_FALLBACK")))
+                .andExpect(jsonPath("$.deltaMinutes", is(5)))
+                .andExpect(jsonPath("$.arrivals", hasSize(1)))
+                .andExpect(jsonPath("$.arrivals[0].lineCode", is(LINE_511)))
+                .andExpect(jsonPath("$.arrivals[0].branch", is("A")))
+                .andExpect(jsonPath("$.arrivals[0].remainingMinutes", is(10))) // Decayed: 15 - 5 = 10
+                .andExpect(jsonPath("$.arrivals[0].distanceMeters", is(3200)))
+                .andExpect(jsonPath("$.arrivals[0].vehicleUnit", is("42")))
+                .andExpect(jsonPath("$.arrivals[0].status", is("ESTIMATED_FALLBACK")));
     }
 
     @Test
@@ -237,11 +238,13 @@ class TelemetryFallbackIntegrationTest {
         when(mgpProxyClient.getArrivals(any(), eq("RecuperarProximosArribosW"), eq(STOP_100), eq(INTERNAL_LINE_511)))
                 .thenReturn(upstreamSuccessJson);
 
-        mockMvc.perform(get("/api/v1/me/dashboard")
+        mockMvc.perform(get("/api/v1/telemetry/arrivals")
+                        .param("lineCode", LINE_511)
+                        .param("stopId", STOP_100)
                         .with(user(COMMUTER_EMAIL))
                         .accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.presets[0].telemetry.status", is("LIVE")));
+                .andExpect(jsonPath("$.status", is("LIVE")));
 
         // Evict Caffeine L1 cache
         Objects.requireNonNull(cacheManager.getCache(CaffeineCacheConfig.ARRIVALS_CACHE)).clear();
@@ -266,13 +269,31 @@ class TelemetryFallbackIntegrationTest {
         arrivalsService.getLastKnownTelemetryStore().put(CACHE_KEY, expiredSnapshot);
 
         // Verify status degrades to EXPIRED with 0 remaining minutes
+        mockMvc.perform(get("/api/v1/telemetry/arrivals")
+                        .param("lineCode", LINE_511)
+                        .param("stopId", STOP_100)
+                        .with(user(COMMUTER_EMAIL))
+                        .accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status", is("EXPIRED")))
+                .andExpect(jsonPath("$.deltaMinutes", is(30)))
+                .andExpect(jsonPath("$.arrivals[0].remainingMinutes", is(0)))
+                .andExpect(jsonPath("$.arrivals[0].status", is("EXPIRED")));
+    }
+
+    @Test
+    @DisplayName("GET /api/v1/me/dashboard returns presets with DELEGATED_TO_CLIENT status")
+    void testDashboard_ReturnsPresetsDelegatedToClient() throws Exception {
         mockMvc.perform(get("/api/v1/me/dashboard")
                         .with(user(COMMUTER_EMAIL))
                         .accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.presets[0].telemetry.status", is("EXPIRED")))
-                .andExpect(jsonPath("$.presets[0].telemetry.deltaMinutes", is(30)))
-                .andExpect(jsonPath("$.presets[0].telemetry.arrivals[0].remainingMinutes", is(0)))
-                .andExpect(jsonPath("$.presets[0].telemetry.arrivals[0].status", is("EXPIRED")));
+                .andExpect(jsonPath("$.userEmail", is(COMMUTER_EMAIL)))
+                .andExpect(jsonPath("$.totalPresets", is(1)))
+                .andExpect(jsonPath("$.presets[0].codigoLinea", is(LINE_511)))
+                .andExpect(jsonPath("$.presets[0].identificadorParada", is(STOP_100)))
+                .andExpect(jsonPath("$.presets[0].bandera", is("A")))
+                .andExpect(jsonPath("$.presets[0].telemetry.status", is("DELEGATED_TO_CLIENT")))
+                .andExpect(jsonPath("$.presets[0].telemetry.arrivals", hasSize(0)));
     }
 }

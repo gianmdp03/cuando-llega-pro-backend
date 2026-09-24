@@ -11,6 +11,7 @@ import com.gianmdp03.cuando_llega_pro.domain.transit.StopLocationEntity;
 import com.gianmdp03.cuando_llega_pro.domain.transit.StopLocationRepository;
 import com.gianmdp03.cuando_llega_pro.domain.transit.TransitLineResolver;
 import com.gianmdp03.cuando_llega_pro.exception.UpstreamServiceException;
+import com.gianmdp03.cuando_llega_pro.exception.TelemetryRefreshRequiredException;
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import org.slf4j.Logger;
@@ -72,7 +73,7 @@ public class ArrivalsService {
     private final ConcurrentHashMap<String, CompletableFuture<ArrivalResponseDTO>> inFlightRequests = new ConcurrentHashMap<>();
 
     public ArrivalsService(
-            MgpProxyClient mgpProxyClient,
+            @Autowired(required = false) MgpProxyClient mgpProxyClient,
             ObjectMapper objectMapper,
             ExtrapolationEngine extrapolationEngine,
             CacheManager cacheManager
@@ -81,7 +82,7 @@ public class ArrivalsService {
     }
 
     public ArrivalsService(
-            MgpProxyClient mgpProxyClient,
+            @Autowired(required = false) MgpProxyClient mgpProxyClient,
             ObjectMapper objectMapper,
             ExtrapolationEngine extrapolationEngine,
             CacheManager cacheManager,
@@ -92,7 +93,7 @@ public class ArrivalsService {
     }
 
     public ArrivalsService(
-            MgpProxyClient mgpProxyClient,
+            @Autowired(required = false) MgpProxyClient mgpProxyClient,
             ObjectMapper objectMapper,
             ExtrapolationEngine extrapolationEngine,
             CacheManager cacheManager,
@@ -105,7 +106,7 @@ public class ArrivalsService {
 
     @Autowired
     public ArrivalsService(
-            MgpProxyClient mgpProxyClient,
+            @Autowired(required = false) MgpProxyClient mgpProxyClient,
             ObjectMapper objectMapper,
             ExtrapolationEngine extrapolationEngine,
             CacheManager cacheManager,
@@ -208,6 +209,33 @@ public class ArrivalsService {
         }
     }
 
+    /** Accepts only a normalized LIVE snapshot keyed by its own commercial line and stop. */
+    public void refreshFromClient(ArrivalResponseDTO snapshot) {
+        if (snapshot == null || snapshot.lineCode() == null || snapshot.lineCode().isBlank()
+                || snapshot.stopId() == null || snapshot.stopId().isBlank()) {
+            log.warn("Renovación de arribos rechazada: faltan lineCode o stopId");
+            throw new IllegalArgumentException("Renovación de arribos incompleta");
+        }
+        if (snapshot.status() != TelemetryStatus.LIVE) {
+            log.warn("Renovación de arribos rechazada: status={} lineCode={} stopId={}",
+                    snapshot.status(), snapshot.lineCode(), snapshot.stopId());
+            throw new IllegalArgumentException("Sólo se pueden guardar arribos LIVE");
+        }
+
+        String lineCode = snapshot.lineCode().trim();
+        String stopId = snapshot.stopId().trim();
+        String cacheKey = stopId + ":" + transitLineResolver.toInternalCode(lineCode);
+        ArrivalResponseDTO normalized = new ArrivalResponseDTO(
+                lineCode, stopId, snapshot.branch(), TelemetryStatus.LIVE, Instant.now(), 0L,
+                snapshot.arrivals(), snapshot.stopLatitude(), snapshot.stopLongitude()
+        );
+        Cache arrivalsCache = cacheManager.getCache(CaffeineCacheConfig.ARRIVALS_CACHE);
+        if (arrivalsCache != null) arrivalsCache.put(cacheKey, normalized);
+        lastKnownTelemetryStore.put(cacheKey, normalized);
+        log.info("Renovación de arribos recibida y guardada: lineCode={} stopId={} entries={}",
+                lineCode, stopId, normalized.arrivals().size());
+    }
+
     private ArrivalResponseDTO fetchArrivalsFromUpstream(
             String cacheKey,
             String lineCode,
@@ -216,6 +244,11 @@ public class ArrivalsService {
             Cache arrivalsCache,
             Cache fallbackCache
     ) {
+        if (mgpProxyClient == null) {
+            log.debug("Caché de arribos vencida para lineCode={} stopId={}; se requiere renovación de cliente.", lineCode, stopId);
+            throw new TelemetryRefreshRequiredException(lineCode, stopId);
+        }
+
         try {
             String requestId = UUID.randomUUID().toString();
             log.debug("Fetching live telemetry: stopId={}, lineCode={}, internalCode={}, reqId={}",

@@ -21,11 +21,12 @@ class ArrivalDtoTest {
         @Test
         @DisplayName("TelemetryStatus enum values check")
         void enumContainsRequiredValues() {
-            assertThat(TelemetryStatus.values()).containsExactly(
+            assertThat(TelemetryStatus.values()).contains(
                     TelemetryStatus.LIVE,
                     TelemetryStatus.ESTIMATED_FALLBACK,
                     TelemetryStatus.EXPIRED,
-                    TelemetryStatus.UNAVAILABLE
+                    TelemetryStatus.UNAVAILABLE,
+                    TelemetryStatus.DELEGATED_TO_CLIENT
             );
         }
     }

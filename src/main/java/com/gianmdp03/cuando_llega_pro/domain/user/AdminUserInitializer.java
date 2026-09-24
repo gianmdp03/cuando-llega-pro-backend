@@ -8,7 +8,10 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+
 @Configuration
+@ConditionalOnProperty(name = "app.admin.bootstrap.enabled", havingValue = "true", matchIfMissing = true)
 public class AdminUserInitializer {
 
     private static final Logger log = LoggerFactory.getLogger(AdminUserInitializer.class);

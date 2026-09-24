@@ -6,6 +6,8 @@ import com.gianmdp03.cuando_llega_pro.domain.transit.dto.TransitIntersectionDTO;
 import com.gianmdp03.cuando_llega_pro.domain.transit.dto.TransitLineDTO;
 import com.gianmdp03.cuando_llega_pro.domain.transit.dto.TransitStopWithFlagDTO;
 import com.gianmdp03.cuando_llega_pro.domain.transit.dto.TransitStreetDTO;
+import com.gianmdp03.cuando_llega_pro.domain.transit.dto.CatalogRefreshRequest;
+import com.gianmdp03.cuando_llega_pro.exception.CatalogRefreshRequiredException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -21,6 +23,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
@@ -79,6 +82,33 @@ class TransitCatalogServiceTest {
 
         verify(mgpProxyClient, never()).getLines(any(), any());
         assertThat(transitLineResolver.toInternalCode("511")).isEqualTo("98");
+    }
+
+    @Test
+    @DisplayName("Expired L2 with proxy disabled requires a client refresh instead of serving stale data")
+    void getLines_expiredL2WithoutProxy_requiresClientRefresh() {
+        transitCatalogService = new TransitCatalogService(null, objectMapper, transitCatalogRepository, transitLineResolver);
+        when(transitCatalogRepository.findById(TransitCatalogService.CACHE_KEY_LINES_ALL))
+                .thenReturn(Optional.of(new TransitCatalogEntity(
+                        TransitCatalogService.CACHE_KEY_LINES_ALL, "LINES", "[]", Instant.now().minusSeconds(24 * 60 * 60 + 1)
+                )));
+
+        assertThatThrownBy(() -> transitCatalogService.getLines())
+                .isInstanceOf(CatalogRefreshRequiredException.class);
+    }
+
+    @Test
+    @DisplayName("Client refresh persists the normalized snapshot for the following GET")
+    void refreshFromClient_persistsSnapshotAndSubsequentGetReadsIt() {
+        transitCatalogService = new TransitCatalogService(null, objectMapper, transitCatalogRepository, transitLineResolver);
+        String payload = "[{\"id\":\"98\",\"codigo\":\"511\",\"descripcion\":\"511\",\"codigoEntidad\":\"10\",\"codigoEmpresa\":13}]";
+
+        transitCatalogService.refreshFromClient(new CatalogRefreshRequest("lines:all", "LINES", payload));
+
+        var saved = org.mockito.ArgumentCaptor.forClass(TransitCatalogEntity.class);
+        verify(transitCatalogRepository).save(saved.capture());
+        when(transitCatalogRepository.findById(TransitCatalogService.CACHE_KEY_LINES_ALL)).thenReturn(Optional.of(saved.getValue()));
+        assertThat(transitCatalogService.getLines()).extracting(TransitLineDTO::codigo).containsExactly("511");
     }
 
     @Test

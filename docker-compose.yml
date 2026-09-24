@@ -1,39 +1,4 @@
 services:
-  flaresolverr:
-    image: ghcr.io/flaresolverr/flaresolverr:v3.5.2
-    restart: unless-stopped
-    environment:
-      LOG_LEVEL: info
-      TZ: America/Argentina/Buenos_Aires
-    shm_size: 256mb
-    networks:
-      - transit-net
-
-  mgp-proxy:
-    build:
-      context: ../go-anti-cloudflare
-      dockerfile: Dockerfile
-    restart: unless-stopped
-    environment:
-      PORT: "8079"
-      UPSTREAM_URL: "https://appsl.mardelplata.gob.ar/app_cuando_llega/webWS.php"
-      TIMEOUT_SECONDS: "45"
-      ALLOWED_ORIGIN: "http://spring-boot:8400"
-      TLS_PROFILE: "Firefox_120"
-      LOG_LEVEL: "info"
-      AUTH_SERVICE_URL: "http://flaresolverr:8191/v1"
-    depends_on:
-      flaresolverr:
-        condition: service_started
-    healthcheck:
-      test: ["CMD", "/healthcheck"]
-      interval: 10s
-      timeout: 3s
-      retries: 3
-      start_period: 5s
-    networks:
-      - transit-net
-
   postgres:
     image: postgres:18
     restart: unless-stopped
@@ -68,11 +33,8 @@ services:
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
       SPRING_JPA_HIBERNATE_DDL_AUTO: "update"
-      MGP_PROXY_URL: "http://mgp-proxy:8079"
     depends_on:
       postgres:
-        condition: service_healthy
-      mgp-proxy:
         condition: service_healthy
     networks:
       - transit-net

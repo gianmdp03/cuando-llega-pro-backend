@@ -4,11 +4,14 @@ import com.gianmdp03.cuando_llega_pro.domain.transit.dto.TransitIntersectionDTO;
 import com.gianmdp03.cuando_llega_pro.domain.transit.dto.TransitLineDTO;
 import com.gianmdp03.cuando_llega_pro.domain.transit.dto.TransitStopWithFlagDTO;
 import com.gianmdp03.cuando_llega_pro.domain.transit.dto.TransitStreetDTO;
+import com.gianmdp03.cuando_llega_pro.domain.transit.dto.CatalogRefreshRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 
 import java.util.List;
 
@@ -63,6 +66,12 @@ public class TransitCatalogController {
             @PathVariable("intersectionCode") String intersectionCode
     ) {
         return ResponseEntity.ok(transitCatalogService.getStopsWithFlag(lineCode, streetCode, intersectionCode));
+    }
+
+    @PostMapping("/catalog-cache")
+    public ResponseEntity<Void> refreshCatalogCache(@RequestBody CatalogRefreshRequest request) {
+        transitCatalogService.refreshFromClient(request);
+        return ResponseEntity.noContent().build();
     }
 
 }

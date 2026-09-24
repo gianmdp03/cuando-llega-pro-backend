@@ -22,5 +22,10 @@ public enum TelemetryStatus {
     /**
      * The upstream could not provide telemetry and no usable fallback existed.
      */
-    UNAVAILABLE
+    UNAVAILABLE,
+
+    /**
+     * Telemetry resolution is delegated to the client application worker.
+     */
+    DELEGATED_TO_CLIENT
 }

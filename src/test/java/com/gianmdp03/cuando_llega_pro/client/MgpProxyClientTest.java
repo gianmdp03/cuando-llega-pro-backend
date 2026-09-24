@@ -27,6 +27,7 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 class MgpProxyClientTest {
 
     private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
+            .withPropertyValues("app.proxy.enabled=true")
             .withUserConfiguration(MgpClientConfig.class)
             .withBean(MgpRequestPacer.class, () -> new MgpRequestPacer(0, 1));
 
@@ -56,6 +57,17 @@ class MgpProxyClientTest {
             assertThat(context).hasSingleBean(RestClient.class);
             assertThat(context).hasSingleBean(MgpProxyClient.class);
         });
+    }
+
+    @Test
+    @DisplayName("Beans are not loaded when app.proxy.enabled is false")
+    void beansNotLoadedWhenDisabled() {
+        contextRunner
+                .withPropertyValues("app.proxy.enabled=false")
+                .run(context -> {
+                    assertThat(context).doesNotHaveBean(MgpClientConfig.class);
+                    assertThat(context).doesNotHaveBean(MgpProxyClient.class);
+                });
     }
 
     @Test

@@ -7,6 +7,8 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 
 /**
  * REST controller providing ad-hoc transit arrival telemetry endpoints.
@@ -37,5 +39,12 @@ public class TelemetryController {
     ) {
         ArrivalResponseDTO response = arrivalsService.getArrivals(lineCode, stopId, bandera);
         return ResponseEntity.ok(response);
+    }
+
+    /** Persists a normalized, client-observed snapshot for the shared 15-second L1 cache. */
+    @PostMapping("/arrivals-cache")
+    public ResponseEntity<Void> refreshArrivalsCache(@RequestBody ArrivalResponseDTO snapshot) {
+        arrivalsService.refreshFromClient(snapshot);
+        return ResponseEntity.noContent().build();
     }
 }

@@ -47,7 +47,7 @@ public class PublishedTransitCatalogImporter {
             TransitDataPersistenceService persistenceService,
             ObjectMapper objectMapper,
             CacheManager cacheManager,
-            RestClient.Builder restClientBuilder
+            @org.springframework.beans.factory.annotation.Autowired(required = false) RestClient.Builder restClientBuilder
     ) {
         this.catalogRepository = catalogRepository;
         this.persistenceService = persistenceService;
@@ -62,7 +62,8 @@ public class PublishedTransitCatalogImporter {
         );
         factory.setReadTimeout(Duration.ofSeconds(60));
 
-        this.restClient = restClientBuilder
+        RestClient.Builder builder = restClientBuilder != null ? restClientBuilder : RestClient.builder();
+        this.restClient = builder
                 .requestFactory(factory)
                 .defaultHeader("Accept", "application/json")
                 .defaultHeader("User-Agent", "cuando-llega-pro-catalog-importer")

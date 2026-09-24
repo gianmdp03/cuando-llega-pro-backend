@@ -14,8 +14,10 @@ import java.net.http.HttpClient;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 
 @Configuration
+@ConditionalOnProperty(name = "app.proxy.enabled", havingValue = "true")
 public class MgpClientConfig {
 
     @Value("${app.proxy.base-url:${MGP_PROXY_URL:http://localhost:8079}}")
