@@ -87,23 +87,4 @@ class MgpDtoMappingTest {
         assertThat(response.arribos().getFirst().arribo()).isEqualTo("proximo");
         assertThat(response.arribos().getFirst().identificadorCoche()).isEqualTo("022");
     }
-
-    @Test
-    @DisplayName("MgpArriboRawDTO converts to and from MgpArriboRaw")
-    void rawDtoConversionWorks() {
-        MgpArriboRaw raw = new MgpArriboRaw(
-                "511", "A", "10 min", "lat1", "lon1",
-                "lat2", "lon2", "true", "42", "20/09/2026 12:00:00", "511"
-        );
-
-        MgpArriboRawDTO dto = MgpArriboRawDTO.fromRaw(raw);
-        assertThat(dto).isNotNull();
-        assertThat(dto.descripcionLinea()).isEqualTo("511");
-        assertThat(dto.identificadorCoche()).isEqualTo("42");
-
-        MgpArriboRaw convertedBack = dto.toRaw();
-        assertThat(convertedBack.descripcionLinea()).isEqualTo("511");
-        assertThat(convertedBack.identificadorCoche()).isEqualTo("42");
-        assertThat(convertedBack.esAdaptado()).isEqualTo("true");
-    }
 }

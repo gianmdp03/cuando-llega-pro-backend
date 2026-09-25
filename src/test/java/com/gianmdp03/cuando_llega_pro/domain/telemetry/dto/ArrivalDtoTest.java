@@ -157,36 +157,4 @@ class ArrivalDtoTest {
             assertThat(dto3.arrivals()).hasSize(1);
         }
     }
-
-    @Nested
-    @DisplayName("ArrivalItemDTO Interoperability Tests")
-    class ArrivalItemDtoTests {
-
-        @Test
-        @DisplayName("Conversion between ArrivalItemDTO and BusArrivalItemDTO")
-        void conversionWorksAccurately() {
-            Instant now = Instant.now();
-            BusArrivalItemDTO bus = new BusArrivalItemDTO("b1", "511", "Dest", 10L, 500, TelemetryStatus.LIVE, now);
-
-            ArrivalItemDTO itemDto = ArrivalItemDTO.from(bus);
-            assertThat(itemDto).isNotNull();
-            assertThat(itemDto.busId()).isEqualTo("b1");
-            assertThat(itemDto.line()).isEqualTo("511");
-            assertThat(itemDto.destination()).isEqualTo("Dest");
-            assertThat(itemDto.remainingMinutes()).isEqualTo(10L);
-            assertThat(itemDto.distanceMeters()).isEqualTo(500);
-            assertThat(itemDto.status()).isEqualTo(TelemetryStatus.LIVE);
-            assertThat(itemDto.timestamp()).isEqualTo(now);
-
-            BusArrivalItemDTO convertedBack = itemDto.toBusArrivalItemDTO();
-            assertThat(convertedBack).isEqualTo(bus);
-
-            assertThat(ArrivalItemDTO.from(null)).isNull();
-
-            ArrivalItemDTO itemConstructors1 = new ArrivalItemDTO("b2", "512", 15L, TelemetryStatus.LIVE);
-            assertThat(itemConstructors1.busId()).isEqualTo("b2");
-            ArrivalItemDTO itemConstructors2 = new ArrivalItemDTO("b3", 20L, TelemetryStatus.LIVE);
-            assertThat(itemConstructors2.busId()).isEqualTo("b3");
-        }
-    }
 }

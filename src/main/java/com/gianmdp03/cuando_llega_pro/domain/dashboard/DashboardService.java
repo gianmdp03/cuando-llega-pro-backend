@@ -6,11 +6,9 @@ import com.gianmdp03.cuando_llega_pro.domain.preset.Preset;
 import com.gianmdp03.cuando_llega_pro.domain.preset.PresetRepository;
 import com.gianmdp03.cuando_llega_pro.domain.telemetry.dto.ArrivalResponseDTO;
 import com.gianmdp03.cuando_llega_pro.domain.telemetry.model.TelemetryStatus;
-import com.gianmdp03.cuando_llega_pro.domain.telemetry.service.ArrivalsService;
 import com.gianmdp03.cuando_llega_pro.domain.user.User;
 import com.gianmdp03.cuando_llega_pro.domain.user.UserRepository;
 import com.gianmdp03.cuando_llega_pro.exception.ResourceNotFoundException;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
@@ -25,24 +23,13 @@ public class DashboardService {
 
     private final PresetRepository presetRepository;
     private final UserRepository userRepository;
-    private final ArrivalsService arrivalsService;
-
-    @Autowired
-    public DashboardService(
-            PresetRepository presetRepository,
-            UserRepository userRepository,
-            @Autowired(required = false) ArrivalsService arrivalsService
-    ) {
-        this.presetRepository = presetRepository;
-        this.userRepository = userRepository;
-        this.arrivalsService = arrivalsService;
-    }
 
     public DashboardService(
             PresetRepository presetRepository,
             UserRepository userRepository
     ) {
-        this(presetRepository, userRepository, null);
+        this.presetRepository = presetRepository;
+        this.userRepository = userRepository;
     }
 
     /**

@@ -130,10 +130,53 @@ class ArrivalsServiceTest {
                 Instant.now(), 0L, List.of(bus));
         when(cacheManager.getCache(CaffeineCacheConfig.ARRIVALS_CACHE)).thenReturn(cache);
 
-        arrivalsService.refreshFromClient(snapshot);
+        ArrivalResponseDTO result = arrivalsService.refreshFromClient(snapshot);
 
+        assertThat(result).isNotNull();
+        assertThat(result.arrivals()).hasSize(1);
         verify(cache).put(eq(CACHE_KEY), any(ArrivalResponseDTO.class));
         assertThat(arrivalsService.getLastKnownTelemetryStore()).containsKey(CACHE_KEY);
+    }
+
+    @Test
+    @DisplayName("Client refresh retains disappeared vehicle as ESTIMATED_FALLBACK via dead reckoning")
+    void refreshFromClient_tracksDisappearedVehicleAsEstimatedFallback() {
+        BusArrivalItemDTO unit1 = new BusArrivalItemDTO(LINE_511, "A", 10, 2000, "10 min", "1552", true, TelemetryStatus.LIVE);
+        BusArrivalItemDTO unit2 = new BusArrivalItemDTO(LINE_511, "A", 20, 4500, "20 min", "1589", true, TelemetryStatus.LIVE);
+        ArrivalResponseDTO initialSnapshot = new ArrivalResponseDTO(LINE_511, STOP_1024, "A", TelemetryStatus.LIVE,
+                Instant.now(), 0L, List.of(unit1, unit2));
+        when(cacheManager.getCache(CaffeineCacheConfig.ARRIVALS_CACHE)).thenReturn(cache);
+
+        // Step 1: Initial poll registers both vehicles in vehicleTrackingBuffer
+        ArrivalResponseDTO firstResult = arrivalsService.refreshFromClient(initialSnapshot);
+        assertThat(firstResult.arrivals()).hasSize(2);
+
+        // Step 2: Second poll has GPS drop for unit 1552 (only unit 1589 arrives)
+        BusArrivalItemDTO unit2Updated = new BusArrivalItemDTO(LINE_511, "A", 19, 4300, "19 min", "1589", true, TelemetryStatus.LIVE);
+        ArrivalResponseDTO secondSnapshot = new ArrivalResponseDTO(LINE_511, STOP_1024, "A", TelemetryStatus.LIVE,
+                Instant.now(), 0L, List.of(unit2Updated));
+
+        BusArrivalItemDTO deadReckonedUnit1 = new BusArrivalItemDTO(LINE_511, "A", 9, 1800, "9 min", "1552", true, TelemetryStatus.ESTIMATED_FALLBACK);
+        when(extrapolationEngine.extrapolateVehicle(any(), any())).thenReturn(deadReckonedUnit1);
+
+        ArrivalResponseDTO consolidated = arrivalsService.refreshFromClient(secondSnapshot);
+
+        // Both units must be present in consolidated response: Unit 1589 (LIVE) and Unit 1552 (ESTIMATED_FALLBACK)
+        assertThat(consolidated.arrivals()).hasSize(2);
+
+        BusArrivalItemDTO recovered = consolidated.arrivals().stream()
+                .filter(item -> "1552".equals(item.vehicleUnit()))
+                .findFirst()
+                .orElseThrow();
+        assertThat(recovered.status()).isEqualTo(TelemetryStatus.ESTIMATED_FALLBACK);
+        assertThat(recovered.remainingMinutes()).isEqualTo(9);
+
+        BusArrivalItemDTO live = consolidated.arrivals().stream()
+                .filter(item -> "1589".equals(item.vehicleUnit()))
+                .findFirst()
+                .orElseThrow();
+        assertThat(live.status()).isEqualTo(TelemetryStatus.LIVE);
+        assertThat(live.remainingMinutes()).isEqualTo(19);
     }
 
     @Nested

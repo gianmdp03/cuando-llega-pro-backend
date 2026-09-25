@@ -210,7 +210,7 @@ public class ArrivalsService {
     }
 
     /** Accepts only a normalized LIVE snapshot keyed by its own commercial line and stop. */
-    public void refreshFromClient(ArrivalResponseDTO snapshot) {
+    public ArrivalResponseDTO refreshFromClient(ArrivalResponseDTO snapshot) {
         if (snapshot == null || snapshot.lineCode() == null || snapshot.lineCode().isBlank()
                 || snapshot.stopId() == null || snapshot.stopId().isBlank()) {
             log.warn("Renovación de arribos rechazada: faltan lineCode o stopId");
@@ -225,15 +225,137 @@ public class ArrivalsService {
         String lineCode = snapshot.lineCode().trim();
         String stopId = snapshot.stopId().trim();
         String cacheKey = stopId + ":" + transitLineResolver.toInternalCode(lineCode);
+
+        List<BusArrivalItemDTO> liveItems = snapshot.arrivals() != null ? snapshot.arrivals() : List.of();
+        List<BusArrivalItemDTO> consolidatedItems = consolidateArrivals(cacheKey, liveItems);
+
+        if (snapshot.stopLatitude() != null && snapshot.stopLongitude() != null) {
+            harvestStopLocationAsync(stopId, snapshot.stopLatitude(), snapshot.stopLongitude());
+        }
+
+        Double stopLat = snapshot.stopLatitude();
+        Double stopLon = snapshot.stopLongitude();
+        if ((stopLat == null || stopLon == null) && stopLocationRepository != null) {
+            var cachedLoc = stopLocationRepository.findById(stopId);
+            if (cachedLoc.isEmpty()) {
+                cachedLoc = stopLocationRepository.findById(stopId.trim());
+            }
+            if (cachedLoc.isPresent()) {
+                StopLocationEntity entity = cachedLoc.get();
+                if (stopLat == null) stopLat = entity.getLatitude();
+                if (stopLon == null) stopLon = entity.getLongitude();
+            }
+        }
+
+        String branch = snapshot.branch();
+        if ((branch == null || branch.isBlank()) && !consolidatedItems.isEmpty()) {
+            branch = consolidatedItems.getFirst().branch();
+        }
+
         ArrivalResponseDTO normalized = new ArrivalResponseDTO(
-                lineCode, stopId, snapshot.branch(), TelemetryStatus.LIVE, Instant.now(), 0L,
-                snapshot.arrivals(), snapshot.stopLatitude(), snapshot.stopLongitude()
+                lineCode, stopId, branch, TelemetryStatus.LIVE, Instant.now(), 0L,
+                consolidatedItems, stopLat, stopLon
         );
         Cache arrivalsCache = cacheManager.getCache(CaffeineCacheConfig.ARRIVALS_CACHE);
         if (arrivalsCache != null) arrivalsCache.put(cacheKey, normalized);
+
+        Cache fallbackCache = cacheManager.getCache(CaffeineCacheConfig.FALLBACK_ARRIVALS_CACHE);
+        if (fallbackCache != null) fallbackCache.evict(cacheKey);
+
         lastKnownTelemetryStore.put(cacheKey, normalized);
-        log.info("Renovación de arribos recibida y guardada: lineCode={} stopId={} entries={}",
-                lineCode, stopId, normalized.arrivals().size());
+        log.info("Renovación de arribos procesada: lineCode={} stopId={} live={} total={}",
+                lineCode, stopId, liveItems.size(), consolidatedItems.size());
+        return normalized;
+    }
+
+    private List<BusArrivalItemDTO> consolidateArrivals(
+            String cacheKey,
+            List<BusArrivalItemDTO> liveItems
+    ) {
+        ConcurrentHashMap<String, BusArrivalItemDTO> trackedUnits =
+                vehicleTrackingBuffer.computeIfAbsent(cacheKey, k -> new ConcurrentHashMap<>());
+
+        Set<String> activeUnitsInPoll = new HashSet<>();
+        List<BusArrivalItemDTO> consolidatedItems = new ArrayList<>();
+
+        for (BusArrivalItemDTO liveItem : liveItems) {
+            String unitId = liveItem.vehicleUnit();
+            BusArrivalItemDTO processedItem = liveItem;
+
+            if (unitId != null && !unitId.isBlank() && isEligibleForTracking(liveItem)) {
+                String cleanUnitId = unitId.trim();
+                activeUnitsInPoll.add(cleanUnitId);
+
+                BusArrivalItemDTO previous = trackedUnits.get(cleanUnitId);
+                Double bearing = null;
+                Double speedKmH = null;
+
+                if (previous != null && previous.latitude() != null && previous.longitude() != null && previous.timestamp() != null
+                        && liveItem.latitude() != null && liveItem.longitude() != null && liveItem.timestamp() != null) {
+                    double deltaD = calculateHaversineMeters(
+                            previous.latitude(), previous.longitude(),
+                            liveItem.latitude(), liveItem.longitude()
+                    );
+                    long deltaT = Duration.between(previous.timestamp(), liveItem.timestamp()).toSeconds();
+
+                    if (deltaD >= 15.0 && deltaT > 0) {
+                        speedKmH = (deltaD / (double) deltaT) * 3.6;
+                        double lat1 = Math.toRadians(previous.latitude());
+                        double lat2 = Math.toRadians(liveItem.latitude());
+                        double dLon = Math.toRadians(liveItem.longitude() - previous.longitude());
+                        double y = Math.sin(dLon) * Math.cos(lat2);
+                        double x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
+                        bearing = (Math.toDegrees(Math.atan2(y, x)) + 360.0) % 360.0;
+                    } else if (deltaD < 15.0) {
+                        bearing = previous.bearing();
+                        speedKmH = 0.0;
+                    } else {
+                        bearing = previous.bearing();
+                        speedKmH = previous.speedKmH();
+                    }
+                }
+
+                processedItem = liveItem.withBearingAndSpeed(bearing, speedKmH);
+                trackedUnits.put(cleanUnitId, processedItem);
+            } else if (unitId != null && !unitId.isBlank()) {
+                trackedUnits.remove(unitId.trim());
+            }
+
+            consolidatedItems.add(processedItem);
+        }
+
+        Instant now = Instant.now();
+        for (Map.Entry<String, BusArrivalItemDTO> entry : trackedUnits.entrySet()) {
+            String unitId = entry.getKey();
+            if (!activeUnitsInPoll.contains(unitId)) {
+                BusArrivalItemDTO lastConfirmed = entry.getValue();
+                BusArrivalItemDTO deadReckoned = extrapolationEngine.extrapolateVehicle(lastConfirmed, now);
+
+                if (deadReckoned != null
+                        && deadReckoned.status() == TelemetryStatus.ESTIMATED_FALLBACK
+                        && deadReckoned.remainingMinutes() != null
+                        && deadReckoned.remainingMinutes() >= 0) {
+
+                    boolean discardZeroMinute = deadReckoned.remainingMinutes() == 0
+                            && (lastConfirmed.timestamp() == null
+                            || Duration.between(lastConfirmed.timestamp(), now).toSeconds() > 180);
+
+                    if (discardZeroMinute) {
+                        trackedUnits.remove(unitId);
+                    } else {
+                        consolidatedItems.add(deadReckoned);
+                    }
+                } else {
+                    trackedUnits.remove(unitId);
+                }
+            }
+        }
+
+        consolidatedItems.sort(Comparator.comparing(
+                item -> item.remainingMinutes() != null ? item.remainingMinutes() : Integer.MAX_VALUE
+        ));
+
+        return consolidatedItems;
     }
 
     private ArrivalResponseDTO fetchArrivalsFromUpstream(
@@ -270,88 +392,7 @@ public class ArrivalsService {
                     .map(rawItem -> telemetryMapper.toBusArrivalItemDTO(rawItem, TelemetryStatus.LIVE, lineCode))
                     .toList();
 
-            ConcurrentHashMap<String, BusArrivalItemDTO> trackedUnits =
-                    vehicleTrackingBuffer.computeIfAbsent(cacheKey, k -> new ConcurrentHashMap<>());
-
-            Set<String> activeUnitsInPoll = new HashSet<>();
-            List<BusArrivalItemDTO> consolidatedItems = new ArrayList<>();
-
-            for (BusArrivalItemDTO liveItem : liveItems) {
-                String unitId = liveItem.vehicleUnit();
-                BusArrivalItemDTO processedItem = liveItem;
-
-                if (unitId != null && !unitId.isBlank() && isEligibleForTracking(liveItem)) {
-                    String cleanUnitId = unitId.trim();
-                    activeUnitsInPoll.add(cleanUnitId);
-
-                    BusArrivalItemDTO previous = trackedUnits.get(cleanUnitId);
-                    Double bearing = null;
-                    Double speedKmH = null;
-
-                    if (previous != null && previous.latitude() != null && previous.longitude() != null && previous.timestamp() != null
-                            && liveItem.latitude() != null && liveItem.longitude() != null && liveItem.timestamp() != null) {
-                        double deltaD = calculateHaversineMeters(
-                                previous.latitude(), previous.longitude(),
-                                liveItem.latitude(), liveItem.longitude()
-                        );
-                        long deltaT = Duration.between(previous.timestamp(), liveItem.timestamp()).toSeconds();
-
-                        if (deltaD >= 15.0 && deltaT > 0) {
-                            speedKmH = (deltaD / (double) deltaT) * 3.6;
-                            double lat1 = Math.toRadians(previous.latitude());
-                            double lat2 = Math.toRadians(liveItem.latitude());
-                            double dLon = Math.toRadians(liveItem.longitude() - previous.longitude());
-                            double y = Math.sin(dLon) * Math.cos(lat2);
-                            double x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
-                            bearing = (Math.toDegrees(Math.atan2(y, x)) + 360.0) % 360.0;
-                        } else if (deltaD < 15.0) {
-                            bearing = previous.bearing();
-                            speedKmH = 0.0;
-                        } else {
-                            bearing = previous.bearing();
-                            speedKmH = previous.speedKmH();
-                        }
-                    }
-
-                    processedItem = liveItem.withBearingAndSpeed(bearing, speedKmH);
-                    trackedUnits.put(cleanUnitId, processedItem);
-                } else if (unitId != null && !unitId.isBlank()) {
-                    trackedUnits.remove(unitId.trim());
-                }
-
-                consolidatedItems.add(processedItem);
-            }
-
-            Instant now = Instant.now();
-            for (Map.Entry<String, BusArrivalItemDTO> entry : trackedUnits.entrySet()) {
-                String unitId = entry.getKey();
-                if (!activeUnitsInPoll.contains(unitId)) {
-                    BusArrivalItemDTO lastConfirmed = entry.getValue();
-                    BusArrivalItemDTO deadReckoned = extrapolationEngine.extrapolateVehicle(lastConfirmed, now);
-
-                    if (deadReckoned != null
-                            && deadReckoned.status() == TelemetryStatus.ESTIMATED_FALLBACK
-                            && deadReckoned.remainingMinutes() != null
-                            && deadReckoned.remainingMinutes() >= 0) {
-
-                        boolean discardZeroMinute = deadReckoned.remainingMinutes() == 0
-                                && (lastConfirmed.timestamp() == null
-                                || Duration.between(lastConfirmed.timestamp(), now).toSeconds() > 180);
-
-                        if (discardZeroMinute) {
-                            trackedUnits.remove(unitId);
-                        } else {
-                            consolidatedItems.add(deadReckoned);
-                        }
-                    } else {
-                        trackedUnits.remove(unitId);
-                    }
-                }
-            }
-
-            consolidatedItems.sort(Comparator.comparing(
-                    item -> item.remainingMinutes() != null ? item.remainingMinutes() : Integer.MAX_VALUE
-            ));
+            List<BusArrivalItemDTO> consolidatedItems = consolidateArrivals(cacheKey, liveItems);
 
             String branch = consolidatedItems.isEmpty() ? null : consolidatedItems.getFirst().branch();
 

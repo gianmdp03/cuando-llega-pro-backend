@@ -6,7 +6,6 @@ import com.gianmdp03.cuando_llega_pro.domain.preset.Preset;
 import com.gianmdp03.cuando_llega_pro.domain.preset.PresetRepository;
 import com.gianmdp03.cuando_llega_pro.domain.preset.model.PresetConfig;
 import com.gianmdp03.cuando_llega_pro.domain.telemetry.model.TelemetryStatus;
-import com.gianmdp03.cuando_llega_pro.domain.telemetry.service.ArrivalsService;
 import com.gianmdp03.cuando_llega_pro.domain.user.User;
 import com.gianmdp03.cuando_llega_pro.domain.user.UserRepository;
 import com.gianmdp03.cuando_llega_pro.exception.ResourceNotFoundException;
@@ -38,9 +37,6 @@ class DashboardServiceTest {
 
     @Mock
     private UserRepository userRepository;
-
-    @Mock
-    private ArrivalsService arrivalsService;
 
     @InjectMocks
     private DashboardService dashboardService;
@@ -75,7 +71,6 @@ class DashboardServiceTest {
                     .hasMessage("User not found with email: nonexistent@example.com");
 
             verify(presetRepository, never()).findAllByUserIdWithUser(any());
-            verify(arrivalsService, never()).getArrivals(any(), any());
         }
     }
 
@@ -96,8 +91,6 @@ class DashboardServiceTest {
             assertThat(response.totalPresets()).isZero();
             assertThat(response.presets()).isEmpty();
             assertThat(response.generatedAt()).isNotNull();
-
-            verify(arrivalsService, never()).getArrivals(any(), any());
         }
     }
 
@@ -141,9 +134,6 @@ class DashboardServiceTest {
             assertThat(item2.telemetry().status()).isEqualTo(TelemetryStatus.DELEGATED_TO_CLIENT);
             assertThat(item2.telemetry().arrivals()).isEmpty();
             assertThat(item2.error()).isNull();
-
-            // Telemetry is delegated to client; backend arrivalsService is never called
-            verify(arrivalsService, never()).getArrivals(any(), any());
         }
     }
 }

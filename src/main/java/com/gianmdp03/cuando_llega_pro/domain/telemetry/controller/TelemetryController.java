@@ -41,10 +41,10 @@ public class TelemetryController {
         return ResponseEntity.ok(response);
     }
 
-    /** Persists a normalized, client-observed snapshot for the shared 15-second L1 cache. */
+    /** Persists a normalized, client-observed snapshot for the shared 15-second L1 cache and returns consolidated telemetry. */
     @PostMapping("/arrivals-cache")
-    public ResponseEntity<Void> refreshArrivalsCache(@RequestBody ArrivalResponseDTO snapshot) {
-        arrivalsService.refreshFromClient(snapshot);
-        return ResponseEntity.noContent().build();
+    public ResponseEntity<ArrivalResponseDTO> refreshArrivalsCache(@RequestBody ArrivalResponseDTO snapshot) {
+        ArrivalResponseDTO consolidated = arrivalsService.refreshFromClient(snapshot);
+        return ResponseEntity.ok(consolidated);
     }
 }

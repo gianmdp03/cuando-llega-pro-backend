@@ -1,13 +1,14 @@
 services:
   postgres:
     image: postgres:18
+    container_name: cuando-llega-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-cuando_llega_pro}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-cuando_llega_pro}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -16,28 +17,42 @@ services:
       - cuando-llega-pgdata:/var/lib/postgresql
     networks:
       - transit-net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   spring-boot:
+    image: cuando-llega-backend:latest
+    container_name: cuando-llega-backend
     build:
       context: .
       dockerfile: Dockerfile
     restart: unless-stopped
     env_file:
-      - .env
+      - path: .env
+        required: false
     ports:
       - "8400:8400"
     environment:
       SERVER_PORT: "8400"
       SPRING_THREADS_VIRTUAL_ENABLED: "true"
-      SPRING_DATASOURCE_URL: "jdbc:postgresql://postgres:5432/${POSTGRES_DB}"
-      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
-      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
-      SPRING_JPA_HIBERNATE_DDL_AUTO: "update"
+      SPRING_DATASOURCE_URL: "jdbc:postgresql://postgres:5432/${POSTGRES_DB:-cuando_llega_pro}"
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-postgres}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      SPRING_JPA_HIBERNATE_DDL_AUTO: "${SPRING_JPA_HIBERNATE_DDL_AUTO:-update}"
+      JWT_SECRET: ${JWT_SECRET:-lyYajqknQ9Gp5BWh2YjBu+RuNaMbNxgTR9Wi7GD1big=}
     depends_on:
       postgres:
         condition: service_healthy
     networks:
       - transit-net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "5"
 
 networks:
   transit-net:

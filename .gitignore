@@ -32,5 +32,6 @@ build/
 ### VS Code ###
 .vscode/
 
-# Local runtime credentials (loaded by Spring, never committed)
+# Local runtime credentials (loaded by Spring or Docker, never committed)
 src/main/resources/secrets.properties
+.env

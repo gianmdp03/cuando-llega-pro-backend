@@ -29,14 +29,14 @@ class UserDtoTest {
     }
 
     @Nested
-    @DisplayName("UserRequestDTO Validation")
-    class UserRequestDtoTests {
+    @DisplayName("AdminCreateUserRequestDTO Validation")
+    class AdminCreateUserRequestDtoTests {
 
         @Test
-        @DisplayName("Valid UserRequestDTO passes all bean validation rules")
+        @DisplayName("Valid AdminCreateUserRequestDTO passes all bean validation rules")
         void validRequestDtoPassesValidation() {
-            UserRequestDTO dto = new UserRequestDTO("valid@example.com", "password123", "Valid User");
-            Set<ConstraintViolation<UserRequestDTO>> violations = validator.validate(dto);
+            AdminCreateUserRequestDTO dto = new AdminCreateUserRequestDTO("valid@example.com", "password123", "Valid User", "ROLE_USER");
+            Set<ConstraintViolation<AdminCreateUserRequestDTO>> violations = validator.validate(dto);
 
             assertThat(violations).isEmpty();
         }
@@ -44,8 +44,8 @@ class UserDtoTest {
         @Test
         @DisplayName("Invalid email causes constraint violation")
         void invalidEmailFailsValidation() {
-            UserRequestDTO dto = new UserRequestDTO("not-an-email", "password123", "Valid User");
-            Set<ConstraintViolation<UserRequestDTO>> violations = validator.validate(dto);
+            AdminCreateUserRequestDTO dto = new AdminCreateUserRequestDTO("not-an-email", "password123", "Valid User", "ROLE_USER");
+            Set<ConstraintViolation<AdminCreateUserRequestDTO>> violations = validator.validate(dto);
 
             assertThat(violations).isNotEmpty();
             assertThat(violations).anyMatch(v -> v.getPropertyPath().toString().equals("email"));
@@ -54,8 +54,8 @@ class UserDtoTest {
         @Test
         @DisplayName("Short password (< 6 chars) causes constraint violation")
         void shortPasswordFailsValidation() {
-            UserRequestDTO dto = new UserRequestDTO("valid@example.com", "12345", "Valid User");
-            Set<ConstraintViolation<UserRequestDTO>> violations = validator.validate(dto);
+            AdminCreateUserRequestDTO dto = new AdminCreateUserRequestDTO("valid@example.com", "12345", "Valid User", "ROLE_USER");
+            Set<ConstraintViolation<AdminCreateUserRequestDTO>> violations = validator.validate(dto);
 
             assertThat(violations).isNotEmpty();
             assertThat(violations).anyMatch(v -> v.getPropertyPath().toString().equals("password"));
@@ -64,8 +64,8 @@ class UserDtoTest {
         @Test
         @DisplayName("Blank full name causes constraint violation")
         void blankFullNameFailsValidation() {
-            UserRequestDTO dto = new UserRequestDTO("valid@example.com", "password123", "   ");
-            Set<ConstraintViolation<UserRequestDTO>> violations = validator.validate(dto);
+            AdminCreateUserRequestDTO dto = new AdminCreateUserRequestDTO("valid@example.com", "password123", "   ", "ROLE_USER");
+            Set<ConstraintViolation<AdminCreateUserRequestDTO>> violations = validator.validate(dto);
 
             assertThat(violations).isNotEmpty();
             assertThat(violations).anyMatch(v -> v.getPropertyPath().toString().equals("fullName"));
@@ -73,7 +73,7 @@ class UserDtoTest {
     }
 
     @Nested
-    @DisplayName("UserDetailDTO and UserListDTO Mapping")
+    @DisplayName("UserDetailDTO Mapping")
     class DtoMappingTests {
 
         @Test
@@ -95,20 +95,6 @@ class UserDtoTest {
             assertThat(detailDTO.role()).isEqualTo("ROLE_USER");
             assertThat(detailDTO.createdAt()).isEqualTo(now);
             assertThat(detailDTO.presetsCount()).isEqualTo(2);
-        }
-
-        @Test
-        @DisplayName("UserListDTO fromEntity correctly extracts summary fields")
-        void userListDtoFromEntity() {
-            User user = new User("admin@example.com", "secret", "Admin User", "ROLE_ADMIN");
-            ReflectionTestUtils.setField(user, "id", 202L);
-
-            UserListDTO listDTO = UserListDTO.fromEntity(user);
-
-            assertThat(listDTO.id()).isEqualTo(202L);
-            assertThat(listDTO.email()).isEqualTo("admin@example.com");
-            assertThat(listDTO.fullName()).isEqualTo("Admin User");
-            assertThat(listDTO.role()).isEqualTo("ROLE_ADMIN");
         }
     }
 }

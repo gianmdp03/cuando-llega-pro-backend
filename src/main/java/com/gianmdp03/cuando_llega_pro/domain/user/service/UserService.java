@@ -2,11 +2,10 @@ package com.gianmdp03.cuando_llega_pro.domain.user.service;
 
 import com.gianmdp03.cuando_llega_pro.domain.user.User;
 import com.gianmdp03.cuando_llega_pro.domain.user.UserRepository;
-import com.gianmdp03.cuando_llega_pro.domain.user.dto.AuthResponseDTO;
 import com.gianmdp03.cuando_llega_pro.domain.user.dto.AdminCreateUserRequestDTO;
+import com.gianmdp03.cuando_llega_pro.domain.user.dto.AuthResponseDTO;
 import com.gianmdp03.cuando_llega_pro.domain.user.dto.LoginRequestDTO;
 import com.gianmdp03.cuando_llega_pro.domain.user.dto.UserDetailDTO;
-import com.gianmdp03.cuando_llega_pro.domain.user.dto.UserRequestDTO;
 import com.gianmdp03.cuando_llega_pro.exception.BadRequestException;
 import com.gianmdp03.cuando_llega_pro.exception.ResourceNotFoundException;
 import com.gianmdp03.cuando_llega_pro.security.jwt.JwtTokenProvider;
@@ -40,42 +39,6 @@ public class UserService {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtTokenProvider = jwtTokenProvider;
-    }
-
-    /**
-     * Registers a new user with encoded password, generates a JWT token, and returns AuthResponseDTO.
-     *
-     * @param request user registration details
-     * @return authentication response containing JWT and user profile
-     */
-    @Transactional
-    public AuthResponseDTO register(UserRequestDTO request) {
-        log.info("Registering new user with email: {}", request.email());
-
-        if (userRepository.existsByEmail(request.email())) {
-            throw new BadRequestException("Email is already registered");
-        }
-
-        User user = new User(
-                request.email(),
-                passwordEncoder.encode(request.password()),
-                request.fullName(),
-                DEFAULT_ROLE
-        );
-
-        User savedUser = userRepository.save(user);
-        String token = jwtTokenProvider.generateToken(
-                savedUser.getEmail(),
-                savedUser.getId(),
-                savedUser.getRole()
-        );
-
-        return new AuthResponseDTO(
-                token,
-                TOKEN_TYPE,
-                jwtTokenProvider.getExpirationMs(),
-                UserDetailDTO.fromEntity(savedUser)
-        );
     }
 
     @Transactional

@@ -6,7 +6,6 @@ import com.gianmdp03.cuando_llega_pro.domain.user.UserRepository;
 import com.gianmdp03.cuando_llega_pro.domain.user.dto.AuthResponseDTO;
 import com.gianmdp03.cuando_llega_pro.domain.user.dto.LoginRequestDTO;
 import com.gianmdp03.cuando_llega_pro.domain.user.dto.UserDetailDTO;
-import com.gianmdp03.cuando_llega_pro.domain.user.dto.UserRequestDTO;
 import com.gianmdp03.cuando_llega_pro.exception.BadRequestException;
 import com.gianmdp03.cuando_llega_pro.exception.ResourceNotFoundException;
 import com.gianmdp03.cuando_llega_pro.security.jwt.JwtTokenProvider;
@@ -52,49 +51,6 @@ class UserServiceTest {
     void setUp() {
         sampleUser = new User("tester@example.com", "encodedPassword123", "Tester Name", "ROLE_USER");
         sampleUser.setId(10L);
-    }
-
-    @Test
-    @DisplayName("register: throws BadRequestException when email already registered")
-    void register_EmailAlreadyExists_ThrowsBadRequestException() {
-        UserRequestDTO request = new UserRequestDTO("tester@example.com", "secret123", "Tester Name");
-        when(userRepository.existsByEmail("tester@example.com")).thenReturn(true);
-
-        assertThatThrownBy(() -> userService.register(request))
-                .isInstanceOf(BadRequestException.class)
-                .hasMessage("Email is already registered");
-
-        verify(userRepository, never()).save(any());
-    }
-
-    @Test
-    @DisplayName("register: saves new user with encoded password and returns AuthResponseDTO")
-    void register_Success() {
-        UserRequestDTO request = new UserRequestDTO("tester@example.com", "rawPassword123", "Tester Name");
-        when(userRepository.existsByEmail("tester@example.com")).thenReturn(false);
-        when(passwordEncoder.encode("rawPassword123")).thenReturn("encodedPassword123");
-        when(userRepository.save(any(User.class))).thenReturn(sampleUser);
-        when(jwtTokenProvider.generateToken("tester@example.com", 10L, "ROLE_USER")).thenReturn("mock.jwt.token");
-        when(jwtTokenProvider.getExpirationMs()).thenReturn(86400000L);
-
-        AuthResponseDTO response = userService.register(request);
-
-        assertThat(response).isNotNull();
-        assertThat(response.token()).isEqualTo("mock.jwt.token");
-        assertThat(response.tokenType()).isEqualTo("Bearer");
-        assertThat(response.expiresIn()).isEqualTo(86400000L);
-        assertThat(response.user().id()).isEqualTo(10L);
-        assertThat(response.user().email()).isEqualTo("tester@example.com");
-        assertThat(response.user().fullName()).isEqualTo("Tester Name");
-        assertThat(response.user().role()).isEqualTo("ROLE_USER");
-
-        ArgumentCaptor<User> userCaptor = ArgumentCaptor.forClass(User.class);
-        verify(userRepository).save(userCaptor.capture());
-        User captured = userCaptor.getValue();
-        assertThat(captured.getEmail()).isEqualTo("tester@example.com");
-        assertThat(captured.getPassword()).isEqualTo("encodedPassword123");
-        assertThat(captured.getFullName()).isEqualTo("Tester Name");
-        assertThat(captured.getRole()).isEqualTo("ROLE_USER");
     }
 
     @Test
