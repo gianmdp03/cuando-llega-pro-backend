@@ -141,7 +141,7 @@ public class SecurityConfig {
                         .authenticationEntryPoint(authenticationEntryPoint())
                 )
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/healthz", "/api/v1/auth/login").permitAll()
+                        .requestMatchers("/healthz", "/api/v1/auth/login", "/api/v1/error-reports").permitAll()
                         .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated()
                 )
